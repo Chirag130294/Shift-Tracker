@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shift Calendar</title>
+<meta name="description" content="Rotating shift calendar with holidays, pay days, leave and swaps.">
+<meta name="theme-color" content="#17695A">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="offline" class="offline hidden" role="status">Offline. Changes are kept on this phone and sync when you are back online.</div>
+<main id="app"><div class="center">Loading...</div></main>
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+<noscript>This app needs JavaScript turned on.</noscript>
+<script type="module" src="app.js"></script>
+</body>
+</html>
