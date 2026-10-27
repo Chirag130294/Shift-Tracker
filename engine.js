@@ -22,6 +22,9 @@ export const addDays = (s, n) => fromDayNum(dayNum(s) + n);
 export const diffDays = (a, b) => dayNum(b) - dayNum(a);
 export const weekday = s => mod(dayNum(s) + 4, 7); // 0 = Sunday (1970-01-01 was a Thursday)
 export const alignToSunday = s => addDays(s, -weekday(s));
+// ws = the day your week starts on: 0 Sunday, 1 Monday, 6 Saturday
+export const weekOffset = (s, ws = 0) => mod(weekday(s) - ws, 7);
+export const alignToWeekStart = (s, ws = 0) => addDays(s, -weekOffset(s, ws));
 export const daysInMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 export function todayIso() {
   const d = new Date();
@@ -77,7 +80,7 @@ export function dayInfo(date, ctx) {
   const o = ctx.days[date] || null;
   const type = o && o.type ? o.type : '';
   let work = base;
-  if (type === 'VAC' || type === 'SICK' || type === 'LIEU' || type === 'OFF' || type === 'SWAP_OUT') work = '';
+  if (type === 'VAC' || type === 'SICK' || type === 'LIEU' || type === 'LEAVE' || type === 'OFF' || type === 'SWAP_OUT') work = '';
   if (type === 'SWAP_IN' || type === 'EXTRA') work = o.shiftId || '';
   const hoursOf = id => (id && ctx.shifts[id] ? paidHours(ctx.shifts[id]) : 0);
   let hours = hoursOf(work);

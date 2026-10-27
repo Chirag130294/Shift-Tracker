@@ -1,8 +1,9 @@
 // Service worker: lets the app open with no signal.
 // App files: try the network first (so updates show up), fall back to the saved copy.
 // Firebase library and fonts: saved on first use, then served from the phone.
-const CACHE = 'shift-calendar-v1';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'engine.js', 'holidays.js', 'backend.js',
+const CACHE = 'shift-calendar-v1-4';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'core.js', 'banks.js', 'share.js', 'engine.js', 'holidays.js', 'backend.js',
+  'views-cal.js', 'views-leave.js', 'views-rot.js', 'views-settings.js', 'views-social.js',
   'firebase-config.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {

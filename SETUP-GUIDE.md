@@ -1,5 +1,7 @@
 # Shift Calendar: put it online (Firebase + GitHub Pages)
 
+> **Already running v1.0?** Skip this guide and follow **UPGRADE-TO-1.4.md**.
+
 **What you are setting up**
 
 | Piece | Job | Cost |
