@@ -1,7 +1,7 @@
 // Leave: banks overview, ledger, add or edit a bank, and booking time off.
 import {
   E, B, S, VIEWS, ACT, $, esc, MON, MONTHS, fmtMD, fmtD, fmtDY, fmtH, range, ico, badge, lvStyle, lvOf, leaveGroups,
-  bankOf, bankStat, toast, top, nav, demoNote, field, sw, num, roll, render, go, back, setProfile, setProfileBanks
+  bankOf, bankStat, toast, top, nav, demoNote, field, sw, num, roll, render, go, back, setProfile, setProfileBanks, empty, commitDays, memGet, memSet
 } from './core.js';
 
 const COLORS = B.BANK_COLORS;
@@ -50,7 +50,7 @@ VIEWS.leave = () => {
     <div class="stack" style="gap:8px">${banks.slice(1).map(b => { const st = bankStat(b.id); return `<button class="card row bkrow" data-act="openBank" data-id="${esc(b.id)}" aria-label="${esc(b.name)}, ${B.fmtAmt(b, st.after)} available">${bankIcon(b)}<span class="grow"><b style="display:block;font-size:14px">${esc(b.name)}</b><span class="small mute">${esc(rowSub(b))}</span></span><span class="r"><b style="font-size:20px">${B.fmtAmt(b, st.after)}</b><span class="small mute">${st.booked ? B.fmtAmt(b, st.left) + ' today' : 'none booked'}</span></span></button>`; }).join('')}</div>
     <button class="btn dash" data-act="bankNew">${ico('plus', 18)} Add your own bank</button>
     <h2>Time off</h2>
-    <div class="card tight">${rows.length ? rows.map(g => `<button class="item" data-act="openDay" data-d="${g.start}"><span class="tag" style="${lvStyle(g.lv)};min-width:44px;height:30px">${esc(g.lv.l)}</span><span class="grow"><span class="t" style="display:block">${g.start === g.end ? fmtDY(g.start) : range(g.start, g.end)}</span><span class="s">${esc(g.lv.name)} · ${g.end > today ? 'booked' : 'taken'} · ${g.n} shift${g.n === 1 ? '' : 's'}</span></span><b>-${fmtH(g.hours)}</b></button>`).join('') : '<p class="mute" style="padding:16px 0">Nothing booked yet. Tap a day on the calendar, or use Book time off.</p>'}</div></div>${nav('leave')}`;
+    <div class="card tight">${rows.length ? rows.map(g => `<button class="item" data-act="openDay" data-d="${g.start}"><span class="tag" style="${lvStyle(g.lv)};min-width:44px;height:30px">${esc(g.lv.l)}</span><span class="grow"><span class="t" style="display:block">${g.start === g.end ? fmtDY(g.start) : range(g.start, g.end)}</span><span class="s">${esc(g.lv.name)} · ${g.end > today ? 'booked' : 'taken'} · ${g.n} shift${g.n === 1 ? '' : 's'}</span></span><b>-${fmtH(g.hours)}</b></button>`).join('') : empty('leave', 'No time off yet', 'Tap a day on the calendar, or book a stretch of days.', 'Book time off', 'bookOpen')}</div></div>${nav('leave')}`;
 };
 
 // ---------- ledger ----------
@@ -79,7 +79,7 @@ VIEWS.bankDetail = () => {
 };
 
 // ---------- add or edit a bank ----------
-const blankBank = () => ({ id: '', name: '', short: '', kind: 'custom', unit: 'd', dayHours: 7.5, color: COLORS[4], balance: 0, asOf: E.todayIso(), earn: { rule: 'none', amount: 0 }, grant: { on: false, amount: 0, date: '01-01' }, reset: false, err: '' });
+const blankBank = () => ({ id: '', name: '', short: '', kind: 'custom', unit: 'd', dayHours: 7.5, color: COLORS[4], balance: 0, asOf: E.todayIso(), earn: { rule: 'none', amount: 0 }, grant: { on: false, amount: 0, date: '01-01' }, reset: false, err: '', more: false });
 function readBE() {
   const b = S.bedit, g = id => { const el = $(id); return el ? el.value : null; };
   const set = (id, fn) => { const v = g(id); if (v !== null) fn(v); };
@@ -89,39 +89,55 @@ function readBE() {
   set('#beAsOf', v => { b.asOf = v; });
   set('#beEarnAmt', v => { b.earn = { ...b.earn, amount: Math.max(0, Number(v) || 0) }; });
   set('#beGAmt', v => { b.grant = { ...b.grant, amount: Math.max(0, Number(v) || 0) }; });
-  set('#beGDay', v => { const d = Math.max(1, Math.min(31, Number(v) || 1)); b.grant = { ...b.grant, date: b.grant.date.slice(0, 3) + E.pad(d) }; });
+  set('#beGM', v => { b.grant = { ...b.grant, date: E.pad(Number(v)) + b.grant.date.slice(2) }; });
+  set('#beGD', v => { b.grant = { ...b.grant, date: b.grant.date.slice(0, 3) + E.pad(Number(v)) }; });
 }
+// What these settings will do, worked out live as you type
+function bankPreview() {
+  const b = B.normBank({ ...S.bedit, id: S.bedit.id || 'tmp', name: S.bedit.name || 'Bank' });
+  const st = bankStat(b.id, null, b), chips = [];
+  for (const r of st.rows) {
+    if (!r.future || !(r.kind === 'earn' || r.kind === 'credit')) continue;
+    const grant = r.title === 'Yearly amount added';
+    chips.push(`<span class="evchip" style="${grant ? 'background:#DCE8F8;color:#1B4F9C' : ''}">${fmtMD(r.date)} · +${B.fmtAmt(b, r.amt)}${grant && b.reset ? ', unused lost' : ''}</span>`);
+    if (chips.length >= 2) break;
+  }
+  return `<div class="row" style="align-items:flex-end"><div class="grow"><div class="lbl" style="margin:0">AVAILABLE TO BOOK</div><div class="bigsm" style="font-size:30px">${B.fmtAmt(b, st.after)}</div></div><div class="small mute" style="text-align:right;line-height:1.35">Balance today ${B.fmtAmt(b, st.left)}<br>${B.fmtAmt(b, st.booked)} already booked</div></div>${chips.length ? `<div class="chips" style="gap:6px;margin-top:6px">${chips.join('')}</div>` : ''}`;
+}
+const switchRow = (title, sub, on, act, label) => `<div class="row"><div class="grow"><b style="display:block;font-size:14px">${title}</b><span class="small mute">${sub}</span></div>${sw(on, act, '', label)}</div>`;
 VIEWS.bankEdit = () => {
   const b = S.bedit, u = b.unit === 'd' ? 'days' : 'hours', isVac = b.id === 'vac';
-  const gm = +b.grant.date.slice(0, 2), gd = +b.grant.date.slice(3);
-  const per = b.earn.rule === 'pay' ? 'each pay day' : 'each month';
+  const gm = +b.grant.date.slice(0, 2), gd = +b.grant.date.slice(3), earnOn = b.earn.rule !== 'none';
   return `<div class="stack">${top(b.isNew ? 'Add a bank' : 'Edit bank')}
+    <div class="card prevcard" id="bePrev" style="--bc:${esc(b.color)}">${bankPreview()}</div>
     <div class="card stack">
-      ${field('<span id="b1">Name</span>', `<input id="beName" type="text" maxlength="30" value="${esc(b.name)}" aria-labelledby="b1">`)}
-      <div class="field"><div class="lbl">Colour</div><div class="chips">${COLORS.map(c => `<button class="swatch ${c.toLowerCase() === String(b.color).toLowerCase() ? 'on' : ''}" data-act="beColor" data-c="${c}" aria-label="Colour ${c}" style="background:${c}"></button>`).join('')}</div></div>
-      <div class="field"><div class="lbl">Count it in</div>${roll('beUnit', [['h', 'Hours'], ['d', 'Days']], b.unit, '', 'Unit')}</div>
-      ${b.unit === 'd' ? field('<span id="b2">One day counts as (hours)</span>', `<input id="beDH" type="number" inputmode="decimal" step="0.25" min="1" value="${+b.dayHours}" aria-labelledby="b2">`, 'A 12-hour shift takes 12 ÷ this many days from a days bank.') : ''}
-      <div class="two">${field(`<span id="b3">Balance now (${u})</span>`, `<input id="beBal" type="number" inputmode="decimal" step="0.25" value="${+b.balance}" aria-labelledby="b3">`)}${field('<span id="b4">As of date</span>', `<input id="beAsOf" type="date" value="${esc(b.asOf)}" aria-labelledby="b4">`)}</div>
+      <div class="row" style="align-items:flex-end;gap:10px">
+        <div class="grow">${field('<span id="b1">NAME</span>', `<input id="beName" type="text" maxlength="30" value="${esc(b.name)}" aria-labelledby="b1">`)}</div>
+        <div class="seg" role="radiogroup" aria-label="Count in" style="grid-template-columns:1fr 1fr;width:132px;margin-bottom:12px"><button role="radio" aria-checked="${b.unit === 'h'}" class="${b.unit === 'h' ? 'on' : ''}" data-act="beUnit" data-v="h">Hours</button><button role="radio" aria-checked="${b.unit === 'd'}" class="${b.unit === 'd' ? 'on' : ''}" data-act="beUnit" data-v="d">Days</button></div>
+      </div>
+      <div><div class="lbl">COLOUR</div><div class="swrow" role="radiogroup" aria-label="Colour">${COLORS.map(c => `<button role="radio" aria-checked="${c.toLowerCase() === String(b.color).toLowerCase()}" class="${c.toLowerCase() === String(b.color).toLowerCase() ? 'on' : ''}" data-act="beColor" data-c="${c}" aria-label="Colour ${c}" style="background:${c}"></button>`).join('')}</div></div>
+      ${b.unit === 'd' ? field('<span id="b2">ONE DAY COUNTS AS (HOURS)</span>', `<input id="beDH" type="number" inputmode="decimal" step="0.25" min="1" value="${+b.dayHours}" aria-labelledby="b2">`) : ''}
+      <div class="two">${field(`<span id="b3">BALANCE NOW (${u.toUpperCase()})</span>`, `<input id="beBal" type="number" inputmode="decimal" step="0.25" value="${+b.balance}" aria-labelledby="b3">`)}${field('<span id="b4">AS OF</span>', `<input id="beAsOf" type="date" value="${esc(b.asOf)}" aria-labelledby="b4">`)}</div>
     </div>
-    <div class="card stack"><h2>How it fills up</h2>
-      <div class="field"><div class="lbl">A little at a time</div>${roll('beEarn', [['none', 'Off'], ['pay', 'Each pay day'], ['month', 'Each month']], b.earn.rule, '', 'Earn rule')}</div>
-      ${b.earn.rule !== 'none' ? field(`<span id="b5">Added ${per} (${u})</span>`, `<input id="beEarnAmt" type="number" inputmode="decimal" step="0.01" min="0" value="${+b.earn.amount}" aria-labelledby="b5">`) : ''}
-      <div class="row between"><div><b>Whole year added at once</b><div class="small mute">Some workplaces add the full year on one date</div></div>${sw(b.grant.on, 'beGrantOn', '', 'Whole year added at once')}</div>
-      ${b.grant.on ? `${field(`<span id="b6">Amount added (${u})</span>`, `<input id="beGAmt" type="number" inputmode="decimal" step="0.25" min="0" value="${+b.grant.amount}" aria-labelledby="b6">`)}
-        <div class="field"><div class="lbl">Added every year on</div>${roll('beGMonth', MONTHS.map((m, k) => [k + 1, m.slice(0, 3)]), gm, '', 'Month')}<div style="margin-top:8px">${field('<span id="b7">Day of the month</span>', `<input id="beGDay" type="number" inputmode="numeric" min="1" max="31" value="${gd}" aria-labelledby="b7">`)}</div></div>
-        <div class="row between"><div><b>Lose unused time on that date</b><div class="small mute">Leftover is cleared, then the new amount is added</div></div>${sw(b.reset, 'beReset', '', 'Lose unused time')}</div>` : ''}
-    </div>
-    ${isVac ? `<div class="card stack"><h2>Vacation rules (optional)</h2>
-      ${field('Vacation per year', num('vacYearly', S.profile.vacYearly), 'Shows how much of the year is left on the Leave tab.')}
-      <div class="two">${field('Most you can carry over', num('carryLimit', S.profile.carryLimit, '0.5'))}${field('Year-end deadline', `<input type="date" data-set="deadline" value="${esc(S.profile.deadline)}">`)}</div>
-      <p class="hint" style="margin:-6px 0 0">Fill both to get a use-it-or-lose-it warning.</p></div>` : ''}
+    <div class="section">How it fills up · use either or both</div>
+    <div class="card stack" style="gap:8px">${switchRow('A little each pay day', earnOn && b.earn.rule === 'month' ? 'Added on the 1st of each month' : 'Added on every pay day', earnOn, 'beEarnTog', 'A little each pay day')}
+      ${earnOn ? `<div class="row"><label class="grow" for="beEarnAmt" style="margin:0">Added each time (${u})</label><input id="beEarnAmt" type="number" inputmode="decimal" step="0.01" min="0" value="${+b.earn.amount}" class="minput" style="width:90px;text-align:right;font-weight:700"></div>
+        <div class="seg" style="grid-template-columns:1fr 1fr"><button class="${b.earn.rule === 'pay' ? 'on' : ''}" data-act="beEarn" data-v="pay">Each pay day</button><button class="${b.earn.rule === 'month' ? 'on' : ''}" data-act="beEarn" data-v="month">Each month</button></div>` : ''}</div>
+    <div class="card stack" style="gap:8px">${switchRow('Whole year at once', 'The full year lands on one date', b.grant.on, 'beGrantOn', 'Whole year at once')}
+      ${b.grant.on ? `<div class="two"><label>${`<span class="lbl">${u.toUpperCase()} PER YEAR</span>`}<input id="beGAmt" type="number" inputmode="decimal" step="0.25" min="0" value="${+b.grant.amount}" class="minput"></label>
+        <div><span class="lbl">ADDED EVERY YEAR ON</span><div class="selrow"><select id="beGM" aria-label="Month" class="minput">${MON.map((m, k) => `<option value="${k + 1}" ${k + 1 === gm ? 'selected' : ''}>${m}</option>`).join('')}</select><select id="beGD" aria-label="Day" class="minput">${Array.from({ length: 31 }, (_, k) => `<option ${k + 1 === gd ? 'selected' : ''}>${k + 1}</option>`).join('')}</select></div></div></div>
+        <div style="border-top:1px solid var(--line);padding-top:8px">${switchRow('Lose unused time on that date', 'Leftover is cleared, then the new amount is added', b.reset, 'beReset', 'Lose unused time')}</div>` : ''}</div>
+    ${isVac ? `<button class="mrow" data-act="beMore" style="border:1px solid var(--line);border-radius:var(--r);background:var(--card)" aria-expanded="${!!b.more}"><span class="grow"><span class="ms" style="font-size:13px;font-weight:700;color:var(--ink)">Carry-over limit and year-end deadline <span class="mute">(optional)</span></span></span>${ico(b.more ? 'x' : 'next', 16)}</button>
+      ${b.more ? `<div class="card stack">${field('Vacation per year', num('vacYearly', S.profile.vacYearly), 'Shows how much of the year is left on the Leave tab.')}
+        <div class="two">${field('Most you can carry over', num('carryLimit', S.profile.carryLimit, '0.5'))}${field('Year-end deadline', `<input type="date" data-set="deadline" value="${esc(S.profile.deadline)}">`)}</div>
+        <p class="hint" style="margin:-6px 0 0">Fill both to get a use-it-or-lose-it warning.</p></div>` : ''}` : ''}
     ${b.err ? `<div class="note err" role="alert">${esc(b.err)}</div>` : ''}
     ${!b.isNew && !['vac', 'sick', 'bank', 'lieu'].includes(b.id) ? '<button class="btn danger" data-act="beDel">Delete this bank</button>' : ''}</div>
   <div class="actbar"><button class="btn" data-act="beSave">Save bank</button></div>`;
 };
 
 // ---------- book time off ----------
-const initBook = () => { const t = E.todayIso(); S.bk = { bank: 'vac', from: t, to: t, split: false, bank2: '', hA: '' }; };
+const initBook = () => { const t = E.todayIso(); const last = memGet('lastBank'); S.bk = { bank: (last && bankOf(last)) ? last : 'vac', from: t, to: t, split: false, bank2: '', hA: '' }; };
 function readBook() {
   const g = id => { const el = $(id); return el ? el.value : null; };
   const f = g('#bkFrom'), t = g('#bkTo'), h = g('#bkHA');
@@ -162,7 +178,7 @@ VIEWS.book = () => {
 // ---------- actions ----------
 Object.assign(ACT, {
   bookOpen: () => { initBook(); go('book'); },
-  bkBank: d => { readBook(); S.bk.bank = d.v; if (S.bk.bank2 === d.v) S.bk.bank2 = ''; render(false); },
+  bkBank: d => { readBook(); S.bk.bank = d.v; memSet('lastBank', d.v); if (S.bk.bank2 === d.v) S.bk.bank2 = ''; render(false); },
   bkBank2: d => { readBook(); S.bk.bank2 = d.v; render(false); },
   bkSplit: () => { readBook(); S.bk.split = !S.bk.split; if (S.bk.split) { const o = S.banks.find(x => x.id !== S.bk.bank); S.bk.bank2 = S.bk.bank2 || (o ? o.id : ''); S.bk.hA = S.bk.hA || ''; } render(false); },
   bkSave() {
@@ -189,8 +205,7 @@ Object.assign(ACT, {
       }
       entries[x.d] = Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== '' && v !== false));
     }
-    S.be.setDays(S.user.uid, entries).catch(e => toast(e.message || 'Could not save'));
-    toast('Time off booked'); back();
+    commitDays(entries, `${dates.length} day${dates.length === 1 ? '' : 's'} booked`); back();
   },
 
   bankFlt: d => { S.p.flt = d.k; render(false); },
@@ -209,8 +224,9 @@ Object.assign(ACT, {
   beColor: d => { readBE(); S.bedit.color = d.c; render(false); },
   beUnit: d => { readBE(); S.bedit.unit = d.v; render(false); },
   beEarn: d => { readBE(); S.bedit.earn = { ...S.bedit.earn, rule: d.v }; render(false); },
+  beEarnTog() { readBE(); const e = S.bedit.earn; S.bedit.earn = { ...e, rule: e.rule === 'none' ? 'pay' : 'none' }; render(false); },
+  beMore: () => { readBE(); S.bedit.more = !S.bedit.more; render(false); },
   beGrantOn: () => { readBE(); const g = S.bedit.grant; S.bedit.grant = { ...g, on: !g.on }; render(false); },
-  beGMonth: d => { readBE(); const g = S.bedit.grant; S.bedit.grant = { ...g, date: E.pad(Number(d.v)) + g.date.slice(2) }; render(false); },
   beReset: () => { readBE(); S.bedit.reset = !S.bedit.reset; render(false); },
   beSave() {
     readBE();
@@ -234,5 +250,10 @@ Object.assign(ACT, {
 document.addEventListener('change', e => {
   const id = e.target.id;
   if (S.view === 'book' && S.bk && (id === 'bkFrom' || id === 'bkTo' || id === 'bkHA')) { readBook(); render(false); }
-  else if (S.view === 'bankEdit' && S.bedit && /^be(Name|DH|Bal|AsOf|EarnAmt|GAmt|GDay)$/.test(id)) readBE();
+  else if (S.view === 'bankEdit' && S.bedit && /^be(Name|DH|Bal|AsOf|EarnAmt|GAmt|GM|GD)$/.test(id)) { readBE(); refreshPrev(); }
+});
+
+function refreshPrev() { const el = $('#bePrev'); if (el && S.bedit) el.innerHTML = bankPreview(); }
+document.addEventListener('input', e => {
+  if (S.view === 'bankEdit' && S.bedit && /^be(DH|Bal|EarnAmt|GAmt)$/.test(e.target.id)) { readBE(); refreshPrev(); }
 });

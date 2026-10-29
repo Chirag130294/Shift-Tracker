@@ -20,36 +20,26 @@ const alignedAnchor = r => (!r.anchorInput ? '' : r.mode === 'week' ? E.alignToW
 function resizeDays(r, n) { while (r.days.length < n) r.days.push(''); r.days.length = n; r.page = Math.min(r.page || 0, Math.max(0, Math.ceil(n / 7) - 1)); }
 
 // ---------- editor (also used by first-time setup) ----------
+// Every week is on screen at once (it scrolls inside its own box after 6 weeks). Tap a shift, then tap days to paint.
 export function rotEditor() {
   const r = S.rot, shifts = S.profile.shifts, byId = Object.fromEntries(shifts.map(s => [s.id, s]));
   const nW = Math.ceil(r.days.length / 7);
-  r.page = Math.max(0, Math.min(r.page || 0, nW - 1));
+  r.page = Math.max(0, Math.min(r.page || 0, nW - 1));   // the selected row, used by "copy week above" and "clear week"
   const dayName = k => dowFrom(r.ws, k);
+  const anchor = alignedAnchor(r);
+  const tmp = anchor ? [{ anchor, effectiveFrom: '1900-01-01', mode: r.mode, days: r.days }] : null;
+  const pos = tmp ? E.rotationPosition(E.todayIso(), tmp) : null;
   const cellBtn = (code, i) => {
     const sh = byId[code];
     return `<button class="pc" data-act="rotCell" data-i="${i}" aria-label="${r.mode === 'week' ? `Week ${Math.floor(i / 7) + 1} ${DOWL[(r.ws + (i % 7)) % 7]}` : `Day ${i + 1}`}, ${sh ? esc(sh.name) : 'off'}" style="${sh ? bstyle(sh) + ';border:0' : ''}">${sh ? esc(sh.code) : 'Off'}</button>`;
   };
-  const anchor = alignedAnchor(r);
-  const tmp = anchor ? [{ anchor, effectiveFrom: '1900-01-01', mode: r.mode, days: r.days }] : null;
-  const pos = tmp ? E.rotationPosition(E.todayIso(), tmp) : null;
-
-  let grid;
-  if (r.mode === 'week') {
-    const w = r.page, base = w * 7;
-    grid = `<div class="pager"><button class="iconbtn" data-act="rotPage" data-n="-1" aria-label="Previous week" ${w === 0 ? 'disabled' : ''}>${ico('back')}</button>
-        <div class="grow" style="text-align:center"><b>Week ${w + 1}</b><span class="small mute"> of ${nW}</span>${pos && pos.week === w + 1 ? '<div class="small" style="color:var(--acc);font-weight:800">Today is in this week</div>' : ''}</div>
-        <button class="iconbtn" data-act="rotPage" data-n="1" aria-label="Next week" ${w >= nW - 1 ? 'disabled' : ''}>${ico('next')}</button></div>
-      <div class="wk7 dws">${DOWS.map((_, k) => `<span>${dayName(k).slice(0, 2)}</span>`).join('')}</div>
-      <div class="wk7 big">${r.days.slice(base, base + 7).map((c, k) => cellBtn(c, base + k)).join('')}</div>`;
-  } else {
-    grid = '';
-    for (let s = 0; s < r.days.length; s += 7) {
-      const part = r.days.slice(s, s + 7);
-      grid += `<div class="wk"><span>Day ${s + 1}</span>${part.map((c, k) => cellBtn(c, s + k)).join('')}${'<span></span>'.repeat(7 - part.length)}</div>`;
-    }
+  let rows = '';
+  for (let s = 0; s < nW; s++) {
+    const part = r.days.slice(s * 7, s * 7 + 7);
+    const cur = r.mode === 'week' && pos && pos.week === s + 1;
+    rows += `<div class="rgrow ${s === r.page ? 'sel' : ''}"><button class="rl ${cur ? 'cur' : ''}" data-act="rotPageTo" data-w="${s}" aria-label="Select ${r.mode === 'week' ? 'week' : 'row'} ${s + 1}">${r.mode === 'week' ? 'Wk ' + (s + 1) : 'Day ' + (s * 7 + 1)}</button>${part.map((c, k) => cellBtn(c, s * 7 + k)).join('')}${'<span></span>'.repeat(7 - part.length)}</div>`;
   }
-  // the whole rotation at a glance, tap a week to open it
-  const strip = r.mode === 'week' && nW > 1 ? `<div><div class="lbl">All ${nW} weeks</div><div class="ovw" role="group" aria-label="All weeks">${Array.from({ length: nW }, (_, w) => `<button class="ovr ${w === r.page ? 'on' : ''}" data-act="rotPageTo" data-w="${w}" aria-label="Week ${w + 1}"><span class="wn">${w + 1}</span>${r.days.slice(w * 7, w * 7 + 7).map(c => { const sh = byId[c]; return `<span class="pv" style="${sh ? bstyle(sh) : ''}">${sh ? esc(sh.code) : ''}</span>`; }).join('')}</button>`).join('')}</div></div>` : '';
+  const heads = `<div class="rgrow" style="margin-bottom:2px"><span></span>${[0, 1, 2, 3, 4, 5, 6].map(k => `<span class="small mute" style="text-align:center;font-weight:700;font-size:11px">${r.mode === 'week' ? dayName(k).slice(0, 2) : k + 1}</span>`).join('')}</div>`;
 
   let prev = '';
   if (tmp) {
@@ -61,25 +51,30 @@ export function rotEditor() {
   } else prev = '<p class="hint">Choose the start date to see a preview.</p>';
 
   const tools = [];
-  if (r.mode === 'week' && nW > 1) tools.push(`<button class="chip" data-act="rotTpl" data-k="next">Copy this week to the next</button>`, `<button class="chip" data-act="rotTpl" data-k="copy">Copy Week 1 to all</button>`, `<button class="chip" data-act="rotTpl" data-k="clearWeek">Clear this week</button>`);
-  tools.push('<button class="chip" data-act="rotTpl" data-k="pitman">2-2-3 (14 days)</button>', '<button class="chip" data-act="rotTpl" data-k="4on4off">4 on, 4 off</button>', '<button class="chip" data-act="rotTpl" data-k="clear">Clear all</button>');
+  if (r.mode === 'week' && nW > 1) tools.push('<button class="chip sm" data-act="rotTpl" data-k="copy">Copy Week 1 to all</button>', '<button class="chip sm" data-act="rotTpl" data-k="above">Copy week above</button>', '<button class="chip sm" data-act="rotTpl" data-k="clearWeek">Clear week</button>');
+  tools.push('<button class="chip sm" data-act="rotTpl" data-k="pitman">2-2-3</button>', '<button class="chip sm" data-act="rotTpl" data-k="4on4off">4 on 4 off</button>', '<button class="chip sm" data-act="rotTpl" data-k="clear">Clear all</button>');
+
+  const first = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  const startRow = r.mode === 'week'
+    ? `<div class="card row" style="gap:12px;align-items:stretch">
+        <div style="flex:none;width:92px"><div class="lbl">REPEATS</div>${wheel('rotWeeksW', Array.from({ length: 52 }, (_, k) => [k + 1, `${k + 1} wk`]), nW, 'Weeks in the rotation', 'mini')}</div>
+        <div class="grow"><div class="lbl">WEEK STARTS ON</div><div class="daypick" role="radiogroup" aria-label="Week starts on">${first.map((l, v) => `<button type="button" role="radio" aria-checked="${r.ws === v}" aria-label="${DOWL[v]}" class="${r.ws === v ? 'on' : ''}" data-act="rotWs" data-v="${v}">${l}</button>`).join('')}</div>
+          <div class="hint">Any day. Your rotation week runs ${DOWL[r.ws]} to ${DOWL[(r.ws + 6) % 7]}.</div>
+          ${pos ? `<div style="margin-top:6px;font-size:12px;font-weight:800;color:var(--acc)">Today is in Week ${pos.week} of ${pos.weeks}</div>` : ''}</div></div>`
+    : `<div class="card row"><span class="lbl" style="margin:0;flex:1">Days in the cycle</span><button class="iconbtn" data-act="rotCycle" data-n="-1" aria-label="One day shorter">${ico('off')}</button><b style="min-width:28px;text-align:center">${r.days.length}</b><button class="iconbtn" data-act="rotCycle" data-n="1" aria-label="One day longer">${ico('plus')}</button></div>`;
 
   return `<div class="stack">
-    <div class="card stack">
-      <div class="seg" style="grid-template-columns:repeat(2,1fr)"><button data-act="rotMode" data-k="week" class="${r.mode === 'week' ? 'on' : ''}">Weekly rotation</button><button data-act="rotMode" data-k="cycle" class="${r.mode === 'cycle' ? 'on' : ''}">Day cycle</button></div>
-      ${r.mode === 'week'
-        ? `<div class="field" style="margin:0"><div class="lbl">Repeats every</div><div class="wheelrow">${wheel('rotWeeksW', Array.from({ length: 52 }, (_, k) => [k + 1, `${k + 1} week${k ? 's' : ''}`]), nW, 'Weeks in the rotation')}<p class="hint" style="margin:0">Roll to choose 1 to 52 weeks. Weeks start on <b>${DOWL[r.ws]}</b>.</p></div></div>`
-        : `<div class="row"><span class="lbl" style="margin:0">Days in the cycle</span><button class="iconbtn" data-act="rotCycle" data-n="-1" aria-label="One day shorter">${ico('off')}</button><b style="min-width:28px;text-align:center">${r.days.length}</b><button class="iconbtn" data-act="rotCycle" data-n="1" aria-label="One day longer">${ico('plus')}</button></div>`}
+    <div class="seg" style="grid-template-columns:repeat(2,1fr)"><button data-act="rotMode" data-k="week" class="${r.mode === 'week' ? 'on' : ''}">Weekly rotation</button><button data-act="rotMode" data-k="cycle" class="${r.mode === 'cycle' ? 'on' : ''}">Day cycle</button></div>
+    ${startRow}
+    <div class="row" style="gap:6px" role="group" aria-label="Shift brush"><button class="brush ${!r.brush ? 'on' : ''}" data-act="rotBrush" data-id="">Off</button>${shifts.map(s => `<button class="brush ${r.brush === s.id ? 'on' : ''}" data-act="rotBrush" data-id="${esc(s.id)}" style="${bstyle(s)};border:0">${esc(s.code)}</button>`).join('')}</div>
+    <div class="card rotbox">${heads}<div class="rotgrid" role="group" aria-label="All weeks">${rows}</div>${nW > 6 ? '<div class="hint">All weeks are in this box. Scroll inside it to reach the rest.</div>' : ''}</div>
+    <div class="chips" style="gap:6px">${tools.join('')}</div>
+    <div class="card row">
+      <span class="grow"><label for="rotAnchor" class="lbl" style="margin:0" id="l6">${r.mode === 'week' ? 'Week 1 starts' : 'Day 1 of the cycle is'}</label><span class="small mute" style="display:block">${r.mode === 'week' ? (anchor ? `${fmtDY(anchor)} (a ${DOWL[r.ws]})` : 'Pick any date inside your Week 1') : 'The date your first cycle day falls on'}</span></span>
+      <input id="rotAnchor" type="date" value="${esc(r.anchorInput)}" aria-labelledby="l6" style="width:auto;min-height:44px">
     </div>
-    <div><div class="lbl">Pick a shift, then tap days to paint</div><div class="row wrap" style="gap:6px"><button class="brush ${!r.brush ? 'on' : ''}" data-act="rotBrush" data-id="">Off</button>${shifts.map(s => `<button class="brush ${r.brush === s.id ? 'on' : ''}" data-act="rotBrush" data-id="${esc(s.id)}" style="${bstyle(s)};border:0">${esc(s.code)}</button>`).join('')}</div></div>
-    <div class="card">${grid}</div>
-    ${strip}
-    <div class="chips">${tools.join('')}</div>
-    <div class="card">${r.mode === 'week' ? `<div class="field"><div class="lbl">Weeks start on</div><div class="hroll" role="radiogroup" aria-label="Weeks start on">${[0, 1, 6].map(v => `<button type="button" role="radio" aria-checked="${r.ws === v}" class="hr ${r.ws === v ? 'on' : ''}" data-act="rotWs" data-v="${v}">${DOWL[v]}</button>`).join('')}</div></div>` : ''}
-      <div class="field"><label><span class="lbl" id="l6">${r.mode === 'week' ? 'Week 1 starts' : 'Day 1 of the cycle is'}</span><input id="rotAnchor" type="date" value="${esc(r.anchorInput)}" aria-labelledby="l6"></label>
-      <div class="hint">${r.mode === 'week' ? (anchor ? `Pick any date in your Week 1. We use the ${DOWL[r.ws]} of that week: <b>${fmtDY(anchor)}</b>.` : 'Pick any date that falls inside your Week 1.') : 'Pick the date your first day of the cycle falls on.'}</div></div>
-      ${pos ? `<p class="hint" style="margin:0"><b>Today is in ${r.mode === 'week' ? `Week ${pos.week} of ${pos.weeks}` : `Day ${pos.index + 1} of ${r.days.length}`}.</b></p>` : ''}
-      ${r.isNew && anchor ? `<p class="hint">The new schedule starts on ${fmtDY(anchor)}. Earlier dates keep your old schedule.</p>` : ''}</div>
+    ${pos && r.mode !== 'week' ? `<p class="hint" style="margin:0"><b>Today is in Day ${pos.index + 1} of ${r.days.length}.</b></p>` : ''}
+    ${r.isNew && anchor ? `<p class="hint">The new schedule starts on ${fmtDY(anchor)}. Earlier dates keep your old schedule.</p>` : ''}
     ${r.err ? `<div class="note err" role="alert">${esc(r.err)}</div>` : ''}
     ${prev}</div>`;
 }
@@ -157,13 +152,13 @@ Object.assign(ACT, {
   rotWs(d) { S.rot.ws = Number(d.v); render(false); },
   rotCycle: d => { const r = S.rot, n = Math.max(2, Math.min(28, r.days.length + Number(d.n))); resizeDays(r, n); render(false); },
   rotBrush: d => { S.rot.brush = d.id; render(false); },
-  rotCell: d => { S.rot.days[Number(d.i)] = S.rot.brush; S.rot.err = ''; render(false); },
+  rotCell: d => { S.rot.days[Number(d.i)] = S.rot.brush; S.rot.err = ''; S.rot.page = Math.floor(Number(d.i) / 7); render(false); },
   rotTpl(d) {
     const r = S.rot, on = r.brush || S.profile.shifts[0].id, w = r.page || 0;
     if (d.k === 'pitman') { r.mode = 'cycle'; r.days = [1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0].map(x => (x ? on : '')); r.page = 0; }
     else if (d.k === '4on4off') { r.mode = 'cycle'; r.days = [1, 1, 1, 1, 0, 0, 0, 0].map(x => (x ? on : '')); r.page = 0; }
     else if (d.k === 'copy') { const src = r.days.slice(0, 7); r.days = r.days.map((_, i) => src[i % 7]); }
-    else if (d.k === 'next') { const src = r.days.slice(w * 7, w * 7 + 7); if (w + 1 < r.days.length / 7) { src.forEach((c, k) => { r.days[(w + 1) * 7 + k] = c; }); r.page = w + 1; } }
+    else if (d.k === 'above') { if (w > 0) for (let k = 0; k < 7; k++) r.days[w * 7 + k] = r.days[(w - 1) * 7 + k]; else toast('Tap a week below Week 1 first'); }
     else if (d.k === 'clearWeek') { for (let k = 0; k < 7; k++) r.days[w * 7 + k] = ''; }
     else r.days = r.days.map(() => '');
     r.err = ''; render(false);

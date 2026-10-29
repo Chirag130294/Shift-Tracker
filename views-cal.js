@@ -2,7 +2,7 @@
 import {
   E, B, S, VIEWS, ACT, SWIPE, $, esc, MONTHS, DOWL, fmtMD, fmtD, fmtDY, fmtH, shortT, timeRange, range, dowFrom, ico, moon, starFill,
   bstyle, badge, LV, isLvType, lvStyle, lvOf, leaveText, holiday, bankOf, bankStat, nextShift, shiftTimes, leaveGroups, timeOffIdeas,
-  toast, top, nav, demoNote, field, sw, render, go, back, commitDay, clean, TYPE_KEYS, todayParts, ws, MON, roll
+  toast, top, nav, demoNote, field, sw, render, go, back, commitDay, commitDays, clean, TYPE_KEYS, todayParts, ws, MON, roll, empty, lieuInfo
 } from './core.js';
 
 const unread = () => Object.values(S.notes || {}).filter(n => !n.read).length;
@@ -22,11 +22,13 @@ function todayCard() {
   return `<button class="today" data-act="pickDay" data-d="${today}" aria-label="Today, details">${head}<span class="grow"><span class="t1">Today · ${fmtD(today)}</span><span class="t2">${title}</span><span class="t3">${sub}</span></span>${np ? `<span class="tr"><span class="t1">Next pay day</span><span class="t2">${fmtMD(np)}</span></span>` : ''}</button>`;
 }
 
+// Banks in two small rows so every bank is visible without taking much room
 function bankChips(vertical) {
-  return `<div class="bchips ${vertical ? 'vert' : ''}" role="group" aria-label="Leave banks">${S.banks.map((b, i) => {
+  const n = S.banks.length, cols = vertical ? 1 : Math.max(1, Math.min(4, Math.ceil(n / 2)));
+  return `<div class="bgrid ${vertical ? 'vert' : ''} ${cols >= 3 ? 'dense' : ''}" style="--cols:${cols}" role="group" aria-label="Leave banks">${S.banks.map(b => {
     const st = bankStat(b.id), main = B.fmtAmt(b, st.after), tod = B.fmtAmt(b, st.left);
-    const sub = i === 0 ? `to book · ${tod} today` : st.booked ? `${tod} today` : 'left';
-    return `<button class="bchip ${i === 0 ? 'big' : ''}" data-act="openBank" data-id="${esc(b.id)}" style="--bc:${esc(b.color)}" aria-label="${esc(b.name)}: ${main} available to book, ${tod} today"><span class="bn"><i></i>${esc(b.name.length > 10 && i ? b.short : b.name)}</span><b>${main}</b><small>${sub}</small></button>`;
+    const sub = st.booked ? `${tod} today` : 'to book';
+    return `<button class="bchip" data-act="openBank" data-id="${esc(b.id)}" style="--bc:${esc(b.color)}" aria-label="${esc(b.name)}: ${main} available to book, ${tod} today"><span class="bn">${esc(cols >= 3 && b.name.length > 9 ? b.short : b.name)}</span><b>${main}</b><small>${sub}</small></button>`;
   }).join('')}</div>`;
 }
 
@@ -59,9 +61,12 @@ function daySummary(date) {
     }
   }
   const acts = [['VAC', 'Vacation', 'sun'], ['SICK', 'Sick', 'plus'], ['LEAVE', 'Other bank', 'leave'], ['SWAP', 'Swap shift', 'swap'], ['EXTRA', 'Extra shift', 'clock'], ['OT', 'Overtime', 'trend']];
+  const li = hn ? lieuInfo(date) : null;
+  const mine = i.isWorking && i.type !== 'SWAP_OUT' && date >= E.todayIso();
   return `<div class="sumhead">${head}</div>
-    ${hn ? `<div class="note hol small"><b>${esc(hn)}</b> · stat holiday</div>` : ''}
+    ${hn ? `<div class="note hol small"><b>${esc(hn)}</b> · stat holiday${li ? ` · <b>${li.text} lieu earned</b>` : ''}</div>` : ''}
     ${leaveBox}
+    ${mine ? `<button class="btn sec" data-act="whoOpen" data-d="${date}" style="margin-bottom:8px">${ico('users', 18)} Who can take my shift?</button>` : ''}
     <div class="actions">${acts.map(([k, l, ic]) => `<button class="act" data-act="selGo" data-k="${k}" data-d="${date}">${ico(ic)}${l}</button>`).join('')}</div>
     <div class="two">${isLvType(i.type) ? `<button class="btn sec dng" data-act="selClear" data-d="${date}">Remove ${esc(lv.l.toLowerCase())}</button>` : `<button class="btn sec" data-act="selGo" data-k="LIEU" data-d="${date}">Lieu day</button>`}<button class="btn sec" data-act="openDay" data-d="${date}">Full details</button></div>`;
 }
@@ -124,10 +129,10 @@ Object.assign(ACT, {
   openBank: d => go('bankDetail', { id: d.id }),
   month: d => { let { y, m } = S.month; m += Number(d.n); if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } S.month = { y, m }; S.slide = Number(d.n) > 0 ? 'l' : 'r'; render(false); },
   thisMonth: () => { S.month = todayParts(); render(false); },
-  selClear: d => { commitDay(d.d, o => TYPE_KEYS(o)); toast('Removed'); },
+  selClear: d => { S.sel = null; commitDay(d.d, o => TYPE_KEYS(o), 'Removed'); render(false); },
   selGo(d) {
     const date = d.d, i = E.dayInfo(date, S.C), k = d.k;
-    if (k === 'LIEU') { commitDay(date, o => ({ ...TYPE_KEYS(o), type: 'LIEU', hours: i.baseHours })); toast('Marked as a lieu day'); return; }
+    if (k === 'LIEU') { S.sel = null; commitDay(date, o => ({ ...TYPE_KEYS(o), type: 'LIEU', hours: i.baseHours }), 'Marked as a lieu day'); render(false); return; }
     if (k === 'SWAP') { S.sw = { person: '', note: '', shiftId: '' }; go('swap', { date, mode: i.base ? 'gave' : 'took' }); return; }
     if (k === 'EXTRA') { S.sw = { person: '', note: '', shiftId: '' }; go('swap', { date, mode: 'extra' }); return; }
     go('day', { date, panel: k, pbank: k === 'VAC' ? 'vac' : k === 'SICK' ? 'sick' : '' });
@@ -178,12 +183,21 @@ VIEWS.day = () => {
     ${hn ? `<div class="note hol"><b>${esc(hn)}</b> · stat holiday<br>${wsh ? 'You are scheduled to work. Premium pay or a lieu day may apply.' : 'You are not working this day.'}</div>` : ''}
     ${psh && E.crossesMidnight(psh) ? `<div class="note small">${moon(12)} Your ${esc(psh.code)} shift from ${fmtD(E.addDays(date, -1))} ends this morning at ${psh.end}.</div>` : ''}
     ${card}
+    ${wsh && i.type !== 'SWAP_OUT' && date >= E.todayIso() ? `<button class="btn sec" data-act="whoOpen" data-d="${date}">${ico('users', 18)} Who can take my shift?</button>` : ''}
     <div class="actions">${A.map(([k, l, ic]) => `<button class="act" data-act="dayAct" data-k="${k}">${ico(ic)}${l}</button>`).join('')}</div>
     ${panel}
-    ${hn || o.lieu ? `<div class="card row between"><div><div style="font-weight:700">Track a lieu day</div><div class="small mute">Adds 1 lieu day to your Lieu bank</div></div>${sw(!!o.lieu, 'lieu', '', 'Track a lieu day')}</div>` : ''}
+    ${lieuCard(date, hn, o)}
     <div><label for="dayNote">Note for this day</label><textarea id="dayNote" maxlength="500" placeholder="Add a note">${esc(o.note || '')}</textarea></div>
   </div>`;
 };
+// On a holiday: the lieu time earned by itself (when switched on in Holidays), or a manual switch
+function lieuCard(date, hn, o) {
+  const li = hn ? lieuInfo(date) : null, L = S.profile.holidayLieu || {};
+  if (li) return `<div class="card row between"><div><div style="font-weight:700">Lieu earned automatically: ${li.text}</div><div class="small mute">${esc(hn)} falls on your shift. Added to your ${esc(bankOf(li.bank).name)} bank.</div></div><button class="btn sec slim" data-act="noLieu">Not this time</button></div>`;
+  if (o.noLieu) return `<div class="card row between"><div><div style="font-weight:700">Lieu not counted for this day</div></div><button class="btn sec slim" data-act="noLieu">Count it</button></div>`;
+  if (hn || o.lieu) return `<div class="card row between"><div><div style="font-weight:700">Track a lieu day</div><div class="small mute">Adds 1 lieu day to your Lieu bank${L.on ? '' : '. Turn on automatic lieu in Settings, Holidays.'}</div></div>${sw(!!o.lieu, 'lieu', '', 'Track a lieu day')}</div>`;
+  return '';
+}
 function panelInfo(bank, left, hours) {
   const amt = B.toUnit(bank, hours);
   return `${B.fmtAmt(bank, amt)} comes off ${esc(bank.name)}, leaving <b>${B.fmtAmt(bank, left - amt)}</b> to book.`;
@@ -199,12 +213,13 @@ Object.assign(ACT, {
   dayAct(d) {
     const date = S.p.date, i = E.dayInfo(date, S.C), k = d.k;
     if (k === 'VAC' || k === 'SICK' || k === 'LEAVE' || k === 'OT') { S.p.panel = k; S.p.pbank = k === 'VAC' ? 'vac' : k === 'SICK' ? 'sick' : k === 'OT' ? '' : defaultBank('LEAVE'); render(false); return; }
-    if (k === 'LIEU') { commitDay(date, o => ({ ...TYPE_KEYS(o), type: 'LIEU', hours: i.baseHours })); toast('Marked as a lieu day'); return; }
-    if (k === 'OFF') { commitDay(date, o => ({ ...TYPE_KEYS(o), type: 'OFF' })); toast('Marked as a day off'); return; }
+    if (k === 'LIEU') { commitDay(date, o => ({ ...TYPE_KEYS(o), type: 'LIEU', hours: i.baseHours }), 'Marked as a lieu day'); return; }
+    if (k === 'OFF') { commitDay(date, o => ({ ...TYPE_KEYS(o), type: 'OFF' }), 'Marked as a day off'); return; }
     if (k === 'SWAP') { S.sw = { person: '', note: '', shiftId: '' }; go('swap', { date, mode: i.base ? 'gave' : 'took' }); return; }
     if (k === 'EXTRA') { S.sw = { person: '', note: '', shiftId: '' }; go('swap', { date, mode: 'extra' }); return; }
-    if (k === 'CLEAR') { commitDay(date, o => TYPE_KEYS(o)); S.p.panel = null; toast('Cleared'); }
+    if (k === 'CLEAR') { commitDay(date, o => TYPE_KEYS(o), 'Cleared'); S.p.panel = null; }
   },
+  noLieu() { const date = S.p.date; commitDay(date, o => ({ ...o, noLieu: !o.noLieu })); },
   panelBank: d => { const h = $('#panelHours'); S.p.pbank = d.v; S.p.keepHours = h ? h.value : ''; render(false); if (S.p.keepHours !== '' && $('#panelHours')) { $('#panelHours').value = S.p.keepHours; $('#panelHours').dispatchEvent(new Event('input', { bubbles: true })); } },
   panelCancel: () => { S.p.panel = null; render(false); },
   panelSave() {
@@ -212,9 +227,9 @@ Object.assign(ACT, {
     if (k === 'OT') { const to = S.p.pbank || ''; commitDay(date, o => ({ ...TYPE_KEYS(o), type: 'OT', hours: h, toBank: to || undefined })); }
     else {
       const bank = bankOf(S.p.pbank || defaultBank(k)), type = B.typeForBank(bank);
-      commitDay(date, o => ({ ...TYPE_KEYS(o), type, bank: type === 'LEAVE' ? bank.id : undefined, hours: h }));
+      commitDay(date, o => ({ ...TYPE_KEYS(o), type, bank: type === 'LEAVE' ? bank.id : undefined, hours: h }), `${bank.name} booked`);
     }
-    S.p.panel = null; toast('Saved');
+    S.p.panel = null; if (k === 'OT') toast('Saved');
   },
   lieu: () => { const date = S.p.date; commitDay(date, o => ({ ...o, lieu: !o.lieu })); }
 });
@@ -246,7 +261,7 @@ VIEWS.swap = () => {
     ${sum ? `<div class="note">${sum}</div>` : ''}
     <button class="btn sec" data-act="askColleague">${ico('users', 18)} Ask a colleague to swap with me in the app</button>
     <h2>Swap history</h2>
-    <div class="card tight">${hist.length ? hist.map(([d, o]) => { const sh = C.shifts[o.shiftId]; return `<button class="item" data-act="openDay" data-d="${d}">${sh ? badge(sh, '', 'min-width:38px;height:30px;font-size:12px') : '<span class="tag" style="background:var(--track)">?</span>'}<span class="grow"><span class="t" style="display:block">${o.type === 'SWAP_OUT' ? 'Given' + (o.person ? ' to ' + esc(o.person) : '') : o.type === 'SWAP_IN' ? 'Picked up' + (o.person ? ' from ' + esc(o.person) : '') : 'Extra shift'}</span><span class="s">${fmtDY(d)}</span></span><b>${o.type === 'SWAP_OUT' ? '-' : '+'}${fmtH(o.hours)}</b></button>`; }).join('') : '<p class="mute" style="padding:16px 0">No swaps yet. Swaps and extra shifts you save appear here.</p>'}</div>
+    <div class="card tight">${hist.length ? hist.map(([d, o]) => { const sh = C.shifts[o.shiftId]; return `<button class="item" data-act="openDay" data-d="${d}">${sh ? badge(sh, '', 'min-width:38px;height:30px;font-size:12px') : '<span class="tag" style="background:var(--track)">?</span>'}<span class="grow"><span class="t" style="display:block">${o.type === 'SWAP_OUT' ? 'Given' + (o.person ? ' to ' + esc(o.person) : '') : o.type === 'SWAP_IN' ? 'Picked up' + (o.person ? ' from ' + esc(o.person) : '') : 'Extra shift'}</span><span class="s">${fmtDY(d)}</span></span><b>${o.type === 'SWAP_OUT' ? '-' : '+'}${fmtH(o.hours)}</b></button>`; }).join('') : empty('swap', 'No swaps yet', 'Swaps and extra shifts you save will show up here.')}</div>
   </div>
   <div class="actbar"><button class="btn" data-act="swSave">Save</button></div>`;
 };
@@ -271,7 +286,7 @@ Object.assign(ACT, {
       const sh = S.C.shifts[S.sw.shiftId];
       commitDay(date, o => ({ ...TYPE_KEYS(o), type: mode === 'took' ? 'SWAP_IN' : 'EXTRA', shiftId: sh.id, hours: E.paidHours(sh), person: mode === 'took' ? person : '', note: note || o.note }));
     }
-    toast('Saved'); back();
+    toast('Swap saved'); back();
   }
 });
 document.addEventListener('change', e => {
@@ -301,5 +316,5 @@ VIEWS.up = () => {
     <div class="two"><div class="card"><span class="small mute" style="font-weight:700">Next shift</span><div style="font-size:18px;font-weight:800;margin-top:2px">${ns ? `${ns.date === today ? 'Today' : fmtD(ns.date)} · ${esc(ns.sh.code)}` : 'None'}</div><div class="small mute">${ns ? `${ns.sh.start} to ${ns.sh.end}` : 'Set up your rotation'}</div></div>
       <div class="card"><span class="small mute" style="font-weight:700">Next pay day</span><div style="font-size:18px;font-weight:800;margin-top:2px">${pays[0] ? fmtD(pays[0]) : 'Not set'}</div><div class="small mute">${pays[0] ? (E.diffDays(today, pays[0]) === 0 ? 'Today' : `In ${E.diffDays(today, pays[0])} days`) : 'Add it in Settings'}</div></div></div>
     <h2>Coming up</h2>
-    <div class="card tight">${ev.length ? ev.slice(0, 10).map(e => `<button class="item" data-act="openDay" data-d="${e.d}"><span style="flex:none;width:44px;text-align:center"><span class="small mute" style="font-weight:700;display:block">${MON[E.parts(e.d).m - 1].toUpperCase()}</span><b style="font-size:20px;line-height:1.1">${E.parts(e.d).d}</b></span><span class="grow"><span class="t" style="display:block">${esc(e.t)}</span><span class="s">${e.s}</span></span><span class="tag" style="background:${e.bg}">${esc(e.tag)}</span></button>`).join('') : '<p class="mute" style="padding:16px 0">Nothing coming up in the next 60 days.</p>'}</div></div>${nav('up')}`;
+    <div class="card tight">${ev.length ? ev.slice(0, 10).map(e => `<button class="item" data-act="openDay" data-d="${e.d}"><span style="flex:none;width:44px;text-align:center"><span class="small mute" style="font-weight:700;display:block">${MON[E.parts(e.d).m - 1].toUpperCase()}</span><b style="font-size:20px;line-height:1.1">${E.parts(e.d).d}</b></span><span class="grow"><span class="t" style="display:block">${esc(e.t)}</span><span class="s">${e.s}</span></span><span class="tag" style="background:${e.bg}">${esc(e.tag)}</span></button>`).join('') : empty('cal', 'Nothing coming up', C.patterns.length ? 'No holidays, pay days or time off in the next 60 days.' : 'Set up your rotation to see what is coming.', C.patterns.length ? '' : 'Set up rotation', 'openRot')}</div></div>${nav('up')}`;
 };

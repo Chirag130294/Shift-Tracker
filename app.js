@@ -1,4 +1,4 @@
-// Shift Calendar v1.4: start-up, sign-in and live data. Screens live in the views-*.js files.
+// Shift Calendar v1.5: start-up, sign-in and live data. Screens live in the views-*.js files.
 import { createBackend } from './backend.js';
 import {
   E, S, VIEWS, ACT, $, esc, ico, bstyle, field, render, go, tab, saveErr, toast, normalize, newProfile, todayParts
@@ -9,7 +9,7 @@ import './views-rot.js';
 import './views-settings.js';
 import { publishSoon, syncFollow, applySwaps, resetSocial, joinFromUrl, maybeShowJoin } from './views-social.js';
 
-VIEWS.boot = () => `<div class="center" style="flex-direction:column;gap:12px;text-align:center">${S.bootErr ? `<div class="note err">${esc(S.bootErr)}</div><button class="btn sec" data-act="signOut">Log out</button>` : 'Loading...'}</div>`;
+VIEWS.boot = () => `<div class="center" style="flex-direction:column;gap:12px;text-align:center">${S.bootErr ? `<div class="note err">${esc(S.bootErr)}</div><button class="btn sec" data-act="signOut">Log out</button>` : '<div class="stack" style="width:100%;padding-top:8px"><div class="sk" style="height:34px;width:55%"></div><div class="sk" style="height:58px"></div><div class="sk" style="height:300px"></div></div>'}</div>`;
 
 VIEWS.config = () => `<div class="stack" style="padding-top:40px">
   <h1>Almost there</h1>
@@ -93,7 +93,7 @@ function softFail(e) {
   console.warn(e);
   if (!ruleToast && (e.code || '').includes('permission')) { ruleToast = true; toast('Sharing needs the new Firestore rules. See the upgrade steps.'); }
 }
-const SOC = ['cal', 'notices', 'sharing', 'follow', 'colleague', 'swapView', 'settings', 'up', 'leave'];
+const SOC = ['cal', 'notices', 'sharing', 'follow', 'colleague', 'swapView', 'settings', 'up', 'leave', 'whoCan'];
 const rerender = () => { if (S.profile && SOC.includes(S.view)) render(false); };
 
 function seedDemo() {

@@ -148,6 +148,8 @@ export function ledger(bank, S, todayIso, horizonDays = 120) {
     if (o.toBank === bank.id && Number(o.hours) > 0) ev.push({ date: d, kind: 'credit', amt: toUnit(bank, Number(o.hours)), title: 'Overtime banked', sub: 'Added to this bank' });
     if (bank.kind === 'lieu' && o.lieu) ev.push({ date: d, kind: 'credit', amt: bank.unit === 'd' ? 1 : bank.dayHours, title: 'Lieu day earned', sub: 'Stat holiday worked' });
   }
+  // lieu time earned by itself for holiday shifts: [{ bank, date, hours, sub }] worked out by the app
+  for (const c of S.autoCredits || []) if (c.bank === bank.id && c.date > asOf && c.date <= end && c.hours > 0) ev.push({ date: c.date, kind: 'credit', amt: toUnit(bank, c.hours), title: 'Lieu day earned', sub: c.sub || 'Holiday worked' });
   ev.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : ORDER[x.kind] - ORDER[y.kind]));
   let run = bank.balance, todayBal = bank.balance, booked = 0;
   const rows = [];

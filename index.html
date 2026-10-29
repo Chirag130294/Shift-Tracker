@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Shift Calendar</title>
 <meta name="description" content="Rotating shift calendar with holidays, pay days, leave and swaps.">
 <meta name="theme-color" content="#17695A">
@@ -15,12 +15,15 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="offline" class="offline hidden" role="status">Offline. Changes are kept on this phone and sync when you are back online.</div>
-<main id="app"><div class="center">Loading...</div></main>
-<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+<div id="shell">
+  <div id="offline" class="offline hidden" role="status">Offline. Changes are kept on this phone and sync when you are back online.</div>
+  <main id="app"><div class="stack" style="padding-top:8px"><div class="sk" style="height:34px;width:55%"></div><div class="sk" style="height:58px"></div><div class="sk" style="height:46px"></div><div class="sk" style="height:300px"></div></div></main>
+  <div id="bars"><div id="toast" class="toast hidden" role="status" aria-live="polite"></div></div>
+</div>
+<div id="sync" class="hidden" role="status" aria-live="polite"></div>
 <noscript>This app needs JavaScript turned on.</noscript>
 <script>
-// If the app has not started after a few seconds, say why instead of showing "Loading..." forever.
+// If the app has not started after a few seconds, say why instead of showing placeholders forever.
 setTimeout(function () {
   var app = document.getElementById('app');
   if (app && !app.dataset.started) {

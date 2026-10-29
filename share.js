@@ -54,6 +54,28 @@ export function restWarnings(ctx, date, sh) {
     g.hours < 0 ? `Overlaps your ${g.code} shift on ${g.date}.` : `Only ${+g.hours.toFixed(1)} h of rest next to your ${g.code} shift on ${g.date}.`);
 }
 
+// Could this colleague take my shift `sh` on `date`? sv = their shared copy. Returns
+//   { state: 'free' | 'tight' | 'working' | 'unknown' | 'none', warns, shift }
+export function availability(sv, date, sh) {
+  if (!sv || sv.denied) return { state: 'none', warns: [] };
+  if (!sv.from || date < sv.from || date > sv.to) return { state: 'unknown', warns: [] };
+  const shifts = Object.fromEntries((sv.shifts || []).map(s => [s.id, s]));
+  const days = Object.fromEntries(Object.entries(sv.days || {}).map(([d, id]) => [d, { type: 'EXTRA', shiftId: id }]));
+  const worked = sv.days && sv.days[date];
+  if (worked) return { state: 'working', warns: [], shift: shifts[worked] || null };
+  const warns = restWarnings({ shifts, patterns: [], days }, date, sh).map(w => w.replace('your ', 'their '));
+  return { state: warns.length ? 'tight' : 'free', warns };
+}
+// The shifts a colleague works in a date window, to offer in exchange for mine.
+export function theirShifts(sv, from, to, limit = 4) {
+  const shifts = Object.fromEntries(((sv && sv.shifts) || []).map(s => [s.id, s])), out = [];
+  for (let n = E.dayNum(from); n <= E.dayNum(to) && out.length < limit; n++) {
+    const d = E.fromDayNum(n), id = sv && sv.days && sv.days[d];
+    if (id && shifts[id] && d >= (sv.from || '') && d <= (sv.to || '9999')) out.push({ d, def: shifts[id] });
+  }
+  return out;
+}
+
 // ---------------- swap requests ----------------
 // A swap document (swaps/{id}):
 //   aUid, aName, aDate, aShift{...}   the person who asked: gives aShift on aDate

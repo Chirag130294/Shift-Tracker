@@ -1,54 +1,141 @@
 // Settings, first-time setup and calendar export (.ics).
 import {
-  E, B, S, VIEWS, ACT, $, esc, fmtD, fmtMD, fmtDY, fmtH, ico, REGIONS, bankOf, nextShift, LV, lvOf, holiday,
-  toast, top, nav, demoNote, field, sw, num, roll, rollSet, render, go, tab, back, setProfile, saveErr, applySet, todayParts, normalize
+  E, B, S, VIEWS, ACT, $, esc, fmtD, fmtMD, fmtDY, fmtH, shortT, ico, REGIONS, bankOf, nextShift, LV, lvOf, holiday, holidayList, lieuInfo, DOWL, MON,
+  toast, top, nav, demoNote, field, sw, num, roll, rollSet, render, go, tab, back, setProfile, saveErr, applySet, todayParts, normalize, mrow, empty, memGet, memSet, flashSaved
 } from './core.js';
+import { COUNTRIES, countryName } from './countries.js';
+import { regionsOf, REGION_TITLE, regionLabel, ensureList, cachedList, BUILT_IN } from './holidays.js';
 import { initRot, rotEditor, commitRotation } from './views-rot.js';
 import { maybeShowJoin } from './views-social.js';
 
-export const VERSION = '1.4';
+export const VERSION = '1.5';
 const standalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 let deferredInstall = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; if (S.view === 'settings') render(false); });
 
-const COUNTRIES = [['', 'None'], ['CA', 'Canada'], ['US', 'United States']];
 const PAYF = [['weekly', 'Weekly'], ['biweekly', 'Every 2 weeks'], ['semimonthly', 'Twice a month'], ['monthly', 'Monthly']];
-const WEEKSTART = [[0, 'Sunday'], [1, 'Monday'], [6, 'Saturday']];
+const WEEKSTART = DOWL.map((d, i) => [i, d]);
+const LIEU_EARN = [['day', '1 day'], ['hours', 'Hours I worked'], ['x15', 'Hours x 1.5']];
+const placeText = p => {
+  if (!p.country) return 'None';
+  const reg = (REGIONS[p.country] || []).find(r => r.id === p.region);
+  const r = reg ? reg.name : p.region ? regionLabel(p.region) : '';
+  return r && !['US'].includes(p.region) ? `${countryName(p.country)} · ${r}` : countryName(p.country);
+};
 
-// ---------- settings ----------
+// ---------- settings: a short menu, one topic per screen ----------
 VIEWS.settings = () => {
-  const p = S.profile, f = p.payFreq, regions = REGIONS[p.country] || [];
-  const group = (title, body) => `<div><h2 class="mute" style="margin:6px 2px 6px">${title}</h2><div class="card">${body}</div></div>`;
-  const links = (a, b, c) => `<button class="item" data-act="${a}"><span class="grow"><span class="t" style="display:block">${b}</span><span class="s">${c}</span></span>${ico('next', 18)}</button>`;
+  const p = S.profile, nv = Object.values(S.viewers || {}), nf = Object.keys(S.following || {}).length;
   const cur = E.patternFor(E.todayIso(), p.patterns) || (p.patterns || [])[p.patterns.length - 1];
-  const nv = Object.values(S.viewers || {}), nf = Object.keys(S.following || {}).length;
+  const L = p.holidayLieu || {};
+  const rot = cur ? (cur.mode === 'week' ? cur.days.length / 7 + '-week rotation' : cur.days.length + '-day cycle') : 'Not set up yet';
   return `${demoNote()}<div class="stack"><div class="top"><h1>Settings</h1></div>
-    <div class="card row"><span class="bdg" style="width:52px;height:52px;border-radius:26px;background:var(--acc);color:var(--acc-ink);font-size:20px">${esc(((p.name || S.user.email || '?').trim()[0] || '?').toUpperCase())}</span><div class="grow"><b style="font-size:16px">${esc(p.name || 'Your name')}</b><div class="small mute" style="overflow-wrap:anywhere">${esc(S.user.email)}</div></div><button class="btn sec" style="width:auto;min-height:44px" data-act="signOut">Log out</button></div>
+    <button class="profcard" data-act="sProfileOpen"><span class="bdg av" style="width:48px;height:48px;border-radius:24px;background:var(--acc);color:var(--acc-ink);font-size:19px">${esc(((p.name || S.user.email || '?').trim()[0] || '?').toUpperCase())}</span><span class="grow"><b style="font-size:16px;display:block">${esc(p.name || 'Your name')}</b><span class="small mute" style="overflow-wrap:anywhere">${esc(S.user.email || 'Signed in')}</span></span>${ico('next', 16)}</button>
     ${standalone() ? '' : `<div class="note">${deferredInstall ? '<button class="btn" data-act="install">Install on this phone</button>' : 'To install: in Chrome tap the menu (three dots), then <b>Install app</b> or <b>Add to Home screen</b>.'}</div>`}
-    ${group('Sharing', `<div class="card tight" style="border:0;padding:0">${links('sharingOpen', 'Share my calendar', nv.length ? `${nv.filter(v => v.active).length} of ${nv.length} colleague${nv.length === 1 ? '' : 's'} can see it` : 'Nobody yet. Colleagues only see the shifts you work.')}${links('followOpen', 'Calendars shared with me', nf ? `${nf} colleague${nf === 1 ? '' : 's'}` : 'None yet')}</div>`)}
-    ${group('My schedule', `<div class="card tight" style="border:0;padding:0">${links('openRot', 'Rotation', cur ? (cur.mode === 'week' ? cur.days.length / 7 + '-week rotation' : cur.days.length + '-day cycle') + ' · starts ' + fmtMD(cur.anchor) : 'Not set up yet')}${links('shiftsOpen', 'Shift library', p.shifts.map(s => esc(s.code)).join(', '))}${links('tabLeave', 'Leave banks', S.banks.map(b => esc(b.name)).join(', '))}</div>
-      <div style="height:12px"></div>${field('Your name', `<input type="text" data-set="name" maxlength="60" value="${esc(p.name)}">`)}
-      <div class="field"><div class="lbl">Week starts on</div>${rollSet('weekStart', WEEKSTART, p.weekStart, 'num', 'Week starts on')}</div>
-      <div class="field"><div class="lbl">Country</div>${rollSet('country', COUNTRIES, p.country, '', 'Country')}</div>
-      ${regions.length > 1 ? `<div class="field"><div class="lbl">Province or state</div>${rollSet('region', regions.map(r => [r.id, r.name]), p.region, '', 'Province')}</div>` : ''}
-      <div class="row between" style="margin-bottom:14px"><div><b>Show stat holidays</b><div class="small mute">Marks the day and whether you work it</div></div>${sw(p.showHolidays !== false, 'toggleHol', '', 'Show stat holidays')}</div>
-      <div class="lbl">Your own holidays</div>
-      ${(p.customHolidays || []).map((h, k) => `<div class="row between" style="min-height:44px"><span>${fmtDY(h.date)} · ${esc(h.name)}</span><button class="link" data-act="delHol" data-k="${k}" style="color:var(--err)">Remove</button></div>`).join('')}
-      <div class="two" style="margin-top:6px"><input id="chDate" type="date" aria-label="Holiday date"><input id="chName" type="text" maxlength="40" placeholder="Holiday name" aria-label="Holiday name"></div>
-      <button class="btn sec" data-act="addHol" style="margin-top:8px;min-height:44px">Add holiday</button>
-      <p class="hint">Holiday lists are calculated for you. Check them against your employer's list and add anything missing.</p>`)}
-    ${group('Pay', `<div class="field"><div class="lbl">Pay frequency</div>${rollSet('payFreq', PAYF, f, '', 'Pay frequency')}</div>
-      ${f === 'semimonthly' ? '' : field(f === 'monthly' ? 'A pay date (its day repeats each month)' : 'A pay date you know', `<input type="date" data-set="payAnchor" value="${esc(p.payAnchor)}">`)}
-      ${f === 'semimonthly' || f === 'monthly' ? `<div class="field"><div class="lbl">If pay day is on a weekend</div>${rollSet('payWeekend', [['before', 'Friday before'], ['none', 'Keep the date']], p.payWeekend, '', 'Weekend pay day')}</div>` : ''}
-      <p class="hint">Vacation, sick and other banks, including the switch for adding the whole year at once, are under Leave banks above.</p>`)}
-    ${group('Screen layout', `<div class="field"><div class="lbl">Calendar layout</div>${rollSet('layout', [['auto', 'Automatic'], ['compact', 'One screen'], ['roomy', 'Scrolling']], p.layout || 'auto', '', 'Calendar layout')}</div>
-      <p class="hint">Automatic fits the calendar on one screen on tall phones and scrolls on small ones. On a tablet or unfolded phone the day details open beside the calendar.</p>`)}
-    ${group('Calendar export and reminders', `<p class="mute" style="margin-bottom:12px">Add your shifts to Google Calendar or your phone calendar. Your calendar app sends the reminders.</p>
-      <button class="btn" data-act="exportOpen">Export shifts (.ics)</button>`)}
-    ${group('Your data', `<p class="mute" style="margin-bottom:12px">Your schedule is saved to your account, and also kept on this phone so the app works offline.</p>
-      <div class="stack"><button class="btn danger" data-act="wipe">Delete all my data</button><button class="btn danger" data-act="delAccount">Delete my account</button></div>`)}
+    <div class="mgroup">${mrow('sharingOpen', 'users', '#17695A', 'Share my calendar', nv.length ? `${nv.filter(v => v.active).length} of ${nv.length} colleague${nv.length === 1 ? '' : 's'} can see it` : 'Nobody yet')}${mrow('followOpen', 'eye', '#0E7490', 'Calendars shared with me', nf ? `${nf} colleague${nf === 1 ? '' : 's'}` : 'None yet')}</div>
+    <div class="mgroup">${mrow('openRot', 'repeat', '#7A4FB5', 'Rotation', `${rot}${cur ? ' · starts ' + fmtMD(cur.anchor) : ''}`)}${mrow('shiftsOpen', 'lib', '#E0782B', 'Shift library', p.shifts.map(s => esc(s.code)).join(', '))}${mrow('tabLeave', 'leave', '#1E6FD9', 'Leave banks', S.banks.map(b => esc(b.name)).join(', '))}</div>
+    <div class="mgroup">${mrow('holidaysOpen', 'flag', '#B3401F', 'Holidays and lieu', p.showHolidays === false ? 'Hidden on the calendar' : L.on ? 'Lieu day earned automatically' : 'Add your own, set up lieu')}${mrow('countryOpen', 'globe', '#0E7490', 'Country and region', esc(placeText(p)))}</div>
+    <div class="mgroup">${mrow('sPayOpen', 'dollar', '#17785A', 'Pay', PAYF.find(x => x[0] === p.payFreq)[1])}${mrow('sDisplayOpen', 'screen', '#475569', 'Calendar and display', `Week starts ${DOWL[p.weekStart]}`)}${mrow('exportOpen', 'download', '#1E6FD9', 'Export shifts (.ics)', 'Google or phone calendar')}</div>
+    <div class="mgroup">${mrow('sDataOpen', 'shield', '#A8261B', 'Your data', 'Saved to your account and on this phone')}</div>
     <p class="small mute" style="text-align:center">Shift Calendar · version ${VERSION}</p></div>${nav('settings')}`;
 };
+const sub = (title, body) => `<div class="stack">${top(title)}${body}</div>${nav('settings')}`;
+VIEWS.sProfile = () => sub('Profile', `<div class="card">${field('Your name', `<input type="text" data-set="name" maxlength="60" value="${esc(S.profile.name)}" autocomplete="name">`)}<div class="small mute">Signed in as ${esc(S.user.email || 'this account')}</div></div><button class="btn danger" data-act="signOut">Log out</button>`);
+VIEWS.sPay = () => {
+  const p = S.profile, f = p.payFreq;
+  return sub('Pay', `<div class="card"><div class="field"><div class="lbl">PAY FREQUENCY</div>${rollSet('payFreq', PAYF, f, '', 'Pay frequency')}</div>
+    ${f === 'semimonthly' ? '' : field(f === 'monthly' ? 'A PAY DATE (ITS DAY REPEATS EACH MONTH)' : 'A PAY DATE YOU KNOW', `<input type="date" data-set="payAnchor" value="${esc(p.payAnchor)}">`)}
+    ${f === 'semimonthly' || f === 'monthly' ? `<div class="field"><div class="lbl">IF PAY DAY IS ON A WEEKEND</div>${rollSet('payWeekend', [['before', 'Friday before'], ['none', 'Keep the date']], p.payWeekend, '', 'Weekend pay day')}</div>` : ''}</div>
+    <p class="hint">Vacation, sick and other banks, including the switch for adding the whole year at once, are in Leave banks.</p>`);
+};
+VIEWS.sDisplay = () => {
+  const p = S.profile;
+  return sub('Calendar and display', `<div class="card"><div class="field"><div class="lbl">WEEK STARTS ON</div>${rollSet('weekStart', WEEKSTART, p.weekStart, 'num', 'Week starts on')}</div>
+    <div class="field"><div class="lbl">CALENDAR LAYOUT</div>${rollSet('layout', [['auto', 'Automatic'], ['compact', 'One screen'], ['roomy', 'Scrolling']], p.layout || 'auto', '', 'Calendar layout')}</div></div>
+    <p class="hint">Automatic fits the calendar on one screen on tall phones and scrolls on small ones. On a tablet or unfolded phone the day details open beside the calendar.</p>`);
+};
+VIEWS.sData = () => sub('Your data', `<div class="card"><p class="mute">Your schedule is saved to your account, and also kept on this phone so the app works offline.</p></div>
+  <button class="btn danger" data-act="wipe">Delete all my data</button><button class="btn danger" data-act="delAccount">Delete my account</button>`);
+
+// ---------- country and region list pickers ----------
+const flagCode = c => `<span class="cc">${c}</span>`;
+VIEWS.country = () => {
+  const q = (S.cq || '').trim().toLowerCase(), cur = S.profile.country;
+  const list = COUNTRIES.filter(([c, n]) => !q || n.toLowerCase().includes(q) || c.toLowerCase() === q);
+  const row = ([c, n]) => `<button class="prow ${c === cur ? 'on' : ''}" role="radio" aria-checked="${c === cur}" data-act="pickCountry" data-c="${c}">${flagCode(c)}<span class="pn">${esc(n)}</span><span class="pt">${REGIONS[c] && REGIONS[c].length > 1 ? 'Regions' : ''}</span>${c === cur ? ico('check', 20) : ''}</button>`;
+  let body = '';
+  if (!q) {
+    const loc = ((navigator.language || '').split('-')[1] || '').toUpperCase();
+    const sug = Array.from(new Set([loc, 'CA', 'US', 'GB', 'AU'].filter(Boolean))).map(c => COUNTRIES.find(x => x[0] === c)).filter(Boolean).slice(0, 4);
+    body += `<div class="section">Selected</div><div class="plist">${cur ? row([cur, countryName(cur)]) : `<button class="prow ${!cur ? 'on' : ''}" data-act="pickCountry" data-c="">${flagCode('--')}<span class="pn">None (no holidays)</span>${ico('check', 20)}</button>`}</div>
+      <div class="section" style="margin-top:6px">Suggested</div><div class="plist" role="radiogroup" aria-label="Suggested countries">${sug.map(row).join('')}</div>`;
+  }
+  let lastL = '';
+  const rows = list.map(x => { const L = x[1][0].toUpperCase(); const h = L !== lastL && !q ? `<div class="phead" id="L-${L}">${L}</div>` : ''; lastL = L; return h + row(x); }).join('');
+  body += `<div class="section" style="margin-top:6px">${q ? 'Results' : 'All countries'}</div>${list.length ? `<div class="plist" role="radiogroup" aria-label="All countries">${rows}</div>` : empty('search', 'No match', 'Try another spelling, or clear the search.')}
+    <p class="hint" style="margin:8px 4px 0"><b>Holidays:</b> Canada and the United States are built in. Most other countries load from a free public holiday list the first time you pick them, then stay saved on your phone. If one is missing, add its holidays by hand.</p>`;
+  const letters = Array.from(new Set(COUNTRIES.map(c => c[1][0].toUpperCase())));
+  return `<div class="stack">${top('Country')}<div class="searchbox">${ico('search', 18)}<input id="cSearch" type="search" placeholder="Search ${COUNTRIES.length} countries" value="${esc(S.cq || '')}" aria-label="Search countries" autocomplete="off"></div>${body}</div>
+    ${q ? '' : `<div class="lidx" aria-label="Jump to letter">${letters.map(l => `<button data-act="cLetter" data-l="${l}" aria-label="Jump to ${l}">${l}</button>`).join('')}</div>`}${nav('settings')}`;
+};
+VIEWS.region = () => {
+  const p = S.profile, y = E.parts(E.todayIso()).y, list = regionsOf(p.country, y), ext = !BUILT_IN.includes(p.country);
+  if (ext) ensureList(p.country, y);
+  const opts = ext ? [{ id: '', name: 'All of ' + countryName(p.country) + ' (national holidays)' }, ...list] : list;
+  const row = r => `<button class="prow ${r.id === (p.region || '') ? 'on' : ''}" role="radio" aria-checked="${r.id === (p.region || '')}" data-act="pickRegion" data-r="${esc(r.id)}"><span class="pn">${esc(r.name)}</span>${r.id === (p.region || '') ? ico('check', 20) : ''}</button>`;
+  return `<div class="stack">${top(REGION_TITLE[p.country] || 'Region')}<div class="section">${esc(countryName(p.country))}</div>
+    ${ext && !list.length ? `<div class="card">${cachedHint(p.country, y)}</div>` : `<div class="plist" role="radiogroup" aria-label="Region">${opts.map(row).join('')}</div>`}
+    <p class="hint" style="margin:8px 4px 0">The region decides which regional holidays are marked. Pick the national or federal option if yours is not listed, then add any extra holidays by hand.</p></div>${nav('settings')}`;
+};
+const cachedHint = (cc, y) => (cachedList(cc, y) ? '<p class="mute">This country has one list for everyone. Nothing to choose here.</p>' : `<p class="mute">Loading the holiday list. This needs an internet connection the first time.</p><button class="btn sec slim" data-act="holRetry" style="margin-top:8px">Try again</button>`);
+
+// ---------- holidays and lieu ----------
+VIEWS.holidays = () => {
+  const p = S.profile, L = p.holidayLieu || {}, y = S.hy || E.parts(E.todayIso()).y, today = E.todayIso();
+  const ext = !BUILT_IN.includes(p.country);
+  const customs = (p.customHolidays || []).filter(h => E.parts(h.date).y === y);
+  const map = {};
+  Object.entries(holidayList(y)).forEach(([d, n]) => { map[d] = { d, name: n }; });
+  customs.forEach(h => { map[h.date] = { d: h.date, name: h.name, custom: true, lieu: h.lieu !== false }; });
+  const rows = Object.values(map).sort((a, b) => (a.d < b.d ? -1 : 1));
+  const onShift = rows.filter(h => { const i = E.dayInfo(h.d, S.C); return i.isWorking; }).length;
+  const bank = bankOf(L.bank || 'lieu') || S.banks[0];
+  const lieuTag = h => {
+    const i = E.dayInfo(h.d, S.C), li = lieuInfo(h.d);
+    if (h.custom && h.lieu === false) return ['No lieu', 'background:#FFF0C2;color:#5A4300'];
+    if (li) return [`${li.text} lieu`, 'background:#E8DCF5;color:#4B2A82'];
+    return i.isWorking ? ['Working', 'background:#E8DCF5;color:#4B2A82'] : ['Off', 'background:var(--track);color:var(--mute)'];
+  };
+  const subTxt = h => {
+    const i = E.dayInfo(h.d, S.C), sh = S.C.shifts[i.work];
+    if (h.custom) return h.lieu === false ? 'My own holiday · lieu turned off' : 'My own holiday · tap to remove';
+    if (!S.C.patterns.length) return 'Set up your rotation to see if you work it';
+    return sh ? `You ${h.d < today ? 'worked' : 'work'} ${esc(sh.code)} ${shortT(sh.start)} to ${shortT(sh.end)}` : `You ${h.d < today ? 'were' : 'are'} off`;
+  };
+  const row = h => { const [t, st] = lieuTag(h), d = E.parts(h.d); const inner = `<span class="hd"><span>${MON[d.m - 1].toUpperCase()}</span><b>${d.d}</b></span><span class="grow"><span style="display:block;font-size:14px;font-weight:700">${esc(h.name)}</span><span class="small mute">${subTxt(h)}</span></span><span class="htag" style="${st}">${esc(t)}</span>`; return h.custom ? `<button class="hrow" data-act="holDel" data-d="${h.d}" aria-label="Remove ${esc(h.name)}">${inner}</button>` : `<div class="hrow">${inner}</div>`; };
+  const regs = regionsOf(p.country, y);
+  const add = S.hadd ? `<div class="card stack"><h2>Add my own holiday</h2>${field('DATE', '<input id="chDate" type="date">')}${field('NAME', '<input id="chName" type="text" maxlength="40" placeholder="Holiday name">')}
+      <div class="row"><div class="grow"><b style="font-size:14px">Earns a lieu day</b><div class="small mute">Counts for automatic lieu when you work it</div></div>${sw(S.hadd.lieu !== false, 'holAddLieu', '', 'Earns a lieu day')}</div>
+      <div class="two"><button class="btn sec" data-act="holAddCancel">Cancel</button><button class="btn" data-act="holAddSave">Add</button></div></div>`
+    : `<button class="btn dash" data-act="holAdd">${ico('plus', 18)} Add my own holiday</button>`;
+  return `<div class="stack">${top('Holidays and lieu')}
+    <div class="row" style="gap:8px"><button class="mrow" data-act="countryOpen" style="flex:1;border:1px solid var(--line);border-radius:12px;background:var(--card);min-height:44px;padding:0 12px"><span style="color:var(--acc)">${ico('globe', 16)}</span><span class="grow"><span class="mt" style="font-size:13px">${esc(placeText(p))}</span></span><span style="color:var(--acc);font-size:12px;font-weight:700">Change</span></button>
+      <div class="seg" role="radiogroup" aria-label="Year" style="grid-template-columns:repeat(3,auto)">${[y - 1, y, y + 1].map(v => `<button role="radio" aria-checked="${v === y}" class="${v === y ? 'on' : ''}" data-act="holYear" data-y="${v}" style="min-height:38px;padding:0 10px">${v}</button>`).join('')}</div></div>
+    ${regs.length > 1 ? `<button class="mrow" data-act="regionOpen" style="border:1px solid var(--line);border-radius:12px;background:var(--card);min-height:44px"><span class="grow"><span class="mt" style="font-size:13px">${esc(REGION_TITLE[p.country] || 'Region')}</span></span><span class="mv">${esc((regs.find(r => r.id === p.region) || {}).name || 'All')}</span>${ico('next', 16)}</button>` : ''}
+    <div class="row between card" style="padding:8px 14px"><div><b style="font-size:14px">Show holidays on the calendar</b></div>${sw(p.showHolidays !== false, 'toggleHol', '', 'Show holidays on the calendar')}</div>
+    <div class="card stack prevcard" style="--bc:#7A4FB5;gap:10px">
+      <div class="row"><div class="grow"><b style="display:block;font-size:14px">Earn a lieu day when I work a holiday</b><span class="small mute">Added by itself each time a holiday lands on one of your shifts</span></div>${sw(!!L.on, 'holLieuTog', '', 'Earn a lieu day when I work a holiday')}</div>
+      ${L.on ? `<div><div class="lbl" style="color:var(--ink)">Earn</div>${roll('holEarn', LIEU_EARN, L.earn || 'day', '', 'Lieu amount')}</div>
+        ${S.banks.length > 1 ? `<div><div class="lbl" style="color:var(--ink)">Goes into</div>${roll('holBank', S.banks.map(b => [b.id, b.name]), bank.id, '', 'Lieu bank')}</div>` : ''}
+        <div class="row small mute" style="gap:8px"><span style="width:9px;height:9px;border-radius:5px;background:${esc(bank.color)};display:inline-block"></span><span>Goes into the <b style="color:var(--ink)">${esc(bank.name)}</b> bank. Edit the bank in Leave.</span></div>` : ''}
+    </div>
+    ${ext && !cachedHolList(p.country, y) ? `<div class="note warn">${cachedHint(p.country, y)}</div>` : ''}
+    <div class="section">${y} · ${rows.length} holiday${rows.length === 1 ? '' : 's'} · ${onShift} on your shifts</div>
+    ${rows.length ? `<div class="card tight">${rows.map(row).join('')}</div>` : empty('flag', 'No holidays listed', p.showHolidays === false ? 'Holidays are hidden. Turn them on above.' : 'Add your own below.')}
+    ${add}
+    <p class="hint">Holiday lists are calculated or loaded for you. Check them against your employer's list and add anything missing.</p></div>${nav('settings')}`;
+};
+const cachedHolList = (cc, y) => cachedList(cc, y);
 
 // ---------- first-time setup ----------
 VIEWS.setup = () => {
@@ -56,19 +143,20 @@ VIEWS.setup = () => {
   const vac = bankOf('vac') || p.banks[0], sick = bankOf('sick') || p.banks[1];
   let body = '';
   if (st === 1) {
-    const regions = REGIONS[p.country] || [];
+    const yy = E.parts(E.todayIso()).y, regions = regionsOf(p.country, yy);
+    if (!BUILT_IN.includes(p.country)) ensureList(p.country, yy);
     body = `<h1>Where do you work?</h1><p class="mute">We use this to show your statutory holidays.</p>
       <div class="card">${field('Your name', `<input type="text" data-set="name" maxlength="60" value="${esc(p.name)}" autocomplete="name">`)}
-      <div class="field"><div class="lbl">Country</div>${rollSet('country', COUNTRIES, p.country, '', 'Country')}</div>
-      ${regions.length > 1 ? `<div class="field"><div class="lbl">Province or state</div>${rollSet('region', regions.map(r => [r.id, r.name]), p.region, '', 'Province')}<div class="hint">Not listed? Choose the federal list and add your own holidays later in Settings.</div></div>` : ''}
-      <div class="field"><div class="lbl">Week starts on</div>${rollSet('weekStart', WEEKSTART, p.weekStart, 'num', 'Week starts on')}</div></div>`;
+      ${field('Country', `<select data-set="country" aria-label="Country">${COUNTRIES.map(([c, n]) => `<option value="${c}" ${c === p.country ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`)}
+      ${regions.length > 1 ? field(REGION_TITLE[p.country] || 'Region', `<select data-set="region" aria-label="Region">${BUILT_IN.includes(p.country) ? '' : `<option value="">All of ${esc(countryName(p.country))}</option>`}${regions.map(r => `<option value="${esc(r.id)}" ${r.id === p.region ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select>`, 'Not listed? Choose the federal or national option and add your own holidays later in Settings.') : ''}
+      <div class="field"><div class="lbl">WEEK STARTS ON</div>${rollSet('weekStart', WEEKSTART, p.weekStart, 'num', 'Week starts on')}</div></div>`;
   } else if (st === 2) {
     if (!S.rot) initRot();
     body = `<h1>Your rotation</h1><p class="mute">Paint the shifts you work. It repeats on its own, so you only do this once.</p>${rotEditor()}`;
   } else if (st === 3) {
     const f = p.payFreq;
     body = `<h1>How do you get paid?</h1><p class="mute">We use this to mark pay days and track your leave.</p>
-      <div class="card"><div class="field"><div class="lbl">Pay frequency</div>${rollSet('payFreq', PAYF, f, '', 'Pay frequency')}</div>
+      <div class="card"><div class="field"><div class="lbl">PAY FREQUENCY</div>${rollSet('payFreq', PAYF, f, '', 'Pay frequency')}</div>
       ${f === 'semimonthly' ? '<p class="hint" style="margin-top:-6px">Pay days are the 15th and the last day of each month.</p>' : field(f === 'monthly' ? 'A pay date (its day repeats each month)' : 'A pay date you know', `<input type="date" data-set="payAnchor" value="${esc(p.payAnchor)}">`, 'Every pay day is counted from this date.')}</div>
       <div class="card"><h2 style="margin-bottom:10px">Leave balances</h2>
       <div class="two">${field(`Vacation left (${vac.unit === 'd' ? 'days' : 'hours'})`, num('vacHours', vac.balance))}${field(`Sick left (${sick.unit === 'd' ? 'days' : 'hours'})`, num('sickHours', sick.balance))}</div>
@@ -81,7 +169,7 @@ VIEWS.setup = () => {
   } else {
     const ns = nextShift();
     body = `<h1>You are all set</h1><p class="mute">Here is what we saved. You can change anything later in Settings.</p>
-      <div class="card tight">${[['Rotation', S.C.patterns.length ? 'Starts ' + fmtDY(S.C.patterns[0].anchor) : 'Not set'], ['Holidays', p.country ? ((REGIONS[p.country].find(r => r.id === p.region) || {}).name || p.country) : 'None'], ['Next shift', ns ? `${fmtD(ns.date)} · ${esc(ns.sh.code)}` : 'None yet'], ['Vacation / sick', `${B.fmtAmt(vac, vac.balance)} / ${B.fmtAmt(sick, sick.balance)}`]].map(([a, b]) => `<div class="item" style="min-height:52px"><span class="grow t">${a}</span><span class="mute">${b}</span></div>`).join('')}</div>
+      <div class="card tight">${[['Rotation', S.C.patterns.length ? 'Starts ' + fmtDY(S.C.patterns[0].anchor) : 'Not set'], ['Holidays', placeText(p)], ['Next shift', ns ? `${fmtD(ns.date)} · ${esc(ns.sh.code)}` : 'None yet'], ['Vacation / sick', `${B.fmtAmt(vac, vac.balance)} / ${B.fmtAmt(sick, sick.balance)}`]].map(([a, b]) => `<div class="item" style="min-height:52px"><span class="grow t">${a}</span><span class="mute">${b}</span></div>`).join('')}</div>
       <div class="note">Tip: install this app from your browser menu so it opens like any other app. Export your shifts to Google Calendar from Settings for reminders.</div>`;
   }
   return `<div class="stack"><div class="top">${st > 1 ? `<button class="iconbtn" data-act="setupBack" aria-label="Back">${ico('back')}</button>` : ''}<b class="mute">Step ${st} of 4</b></div>
@@ -97,7 +185,7 @@ const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || 'null');
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignore */ } };
 const REMS = [[15, '15 min'], [30, '30 min'], [60, '1 hour'], [120, '2 hours'], [720, '12 hours'], [1440, '1 day']];
 const RANGES = [['3', 'Next 3 months'], ['6', 'Next 6 months'], ['12', 'Next 12 months'], ['custom', 'Choose dates']];
-const initExp = () => { const m = Number(S.profile.reminderMin) || 0; S.exp = { range: '6', from: E.todayIso(), to: E.addDays(E.todayIso(), 180), rems: m ? [m] : [], leave: true, hol: false, pay: false }; };
+const initExp = () => { const m = Number(S.profile.reminderMin) || 0, k = memGet('exp') || {}; S.exp = { range: k.range && k.range !== 'custom' ? k.range : '6', from: E.todayIso(), to: E.addDays(E.todayIso(), 180), rems: Array.isArray(k.rems) ? k.rems : (m ? [m] : []), leave: k.leave !== false, hol: !!k.hol, pay: !!k.pay }; };
 const expRange = () => {
   const x = S.exp, t = E.todayIso();
   if (x.range === 'custom') return { from: x.from || t, to: x.to && x.to >= (x.from || t) ? x.to : E.addDays(x.from || t, 30) };
@@ -192,17 +280,43 @@ Object.assign(ACT, {
     const a = document.createElement('a');
     a.href = url; a.download = 'my-shifts.ics'; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
+    memSet('exp', { range: S.exp.range, rems: S.exp.rems, leave: S.exp.leave, hol: S.exp.hol, pay: S.exp.pay });
     lsSet(LAST_KEY(), { at: Date.now(), seq, ev: Object.fromEntries(Object.entries(ev).map(([k, e]) => [k, e.sig])) });
     toast(`Downloaded ${n} events`); render(false);
   },
   install: async () => { if (!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; render(false); },
   toggleHol: () => { setProfile({ showHolidays: S.profile.showHolidays === false }); render(false); },
-  addHol() {
+  sProfileOpen: () => go('sProfile'), sPayOpen: () => go('sPay'), sDisplayOpen: () => go('sDisplay'), sDataOpen: () => go('sData'),
+  holidaysOpen: () => { S.hy = E.parts(E.todayIso()).y; S.hadd = null; go('holidays'); },
+  countryOpen: () => { S.cq = ''; S.viaCountry = false; go('country'); },
+  regionOpen: () => { S.viaCountry = false; go('region'); },
+  cLetter: d => { const el = document.getElementById('L-' + d.l); if (el) el.scrollIntoView({ block: 'start' }); },
+  pickCountry(d) {
+    applySet('country', d.c);
+    const list = REGIONS[d.c];
+    if (list && list.length > 1) { S.viaCountry = true; go('region'); } else back();
+  },
+  pickRegion(d) { applySet('region', d.r); if (S.viaCountry && history.state && history.state.depth >= 2) { S.viaCountry = false; history.go(-2); } else back(); },
+  holRetry: () => { ensureList(S.profile.country, E.parts(E.todayIso()).y); toast('Trying again'); },
+  holYear: d => { S.hy = Number(d.y); render(false); },
+  holLieuTog() { const L = S.profile.holidayLieu || {}; setProfile({ holidayLieu: { earn: 'day', bank: 'lieu', ...L, on: !L.on } }); render(false); },
+  holEarn: d => { setProfile({ holidayLieu: { ...(S.profile.holidayLieu || {}), earn: d.v } }); render(false); },
+  holBank: d => { setProfile({ holidayLieu: { ...(S.profile.holidayLieu || {}), bank: d.v } }); render(false); },
+  holAdd: () => { S.hadd = { lieu: true }; render(false); },
+  holAddCancel: () => { S.hadd = null; render(false); },
+  holAddLieu: () => { const a = $('#chDate'), n = $('#chName'); S.hadd = { lieu: S.hadd.lieu === false, date: a && a.value, name: n && n.value }; render(false); if (S.hadd.date && $('#chDate')) $('#chDate').value = S.hadd.date; if (S.hadd.name && $('#chName')) $('#chName').value = S.hadd.name; },
+  holAddSave() {
     const date = $('#chDate').value, name = $('#chName').value.trim();
     if (!date || !name) return toast('Enter a date and a name');
-    setProfile({ customHolidays: [...(S.profile.customHolidays || []), { date, name }].sort((a, b) => (a.date < b.date ? -1 : 1)) }); render(false);
+    const list = (S.profile.customHolidays || []).filter(h => h.date !== date);
+    setProfile({ customHolidays: [...list, { date, name, lieu: S.hadd.lieu !== false }].sort((a, b) => (a.date < b.date ? -1 : 1)) });
+    S.hy = E.parts(date).y; S.hadd = null; toast('Holiday added'); render(false);
   },
-  delHol: d => { const l = [...S.profile.customHolidays]; l.splice(Number(d.k), 1); setProfile({ customHolidays: l }); render(false); },
+  holDel(d) {
+    const before = S.profile.customHolidays || [], gone = before.find(h => h.date === d.d);
+    setProfile({ customHolidays: before.filter(h => h.date !== d.d) }); render(false);
+    toast(`Removed ${gone ? gone.name : 'holiday'}`, () => { setProfile({ customHolidays: before }); render(false); });
+  },
   async wipe() {
     if (!confirm('Delete all your schedule data? This cannot be undone. Your login stays.')) return;
     try { await S.be.wipe(S.user.uid); toast('Data deleted'); } catch (e) { toast(saveErr(e)); }
@@ -272,3 +386,5 @@ document.addEventListener('change', e => {
   if (t.id === 'expFrom' && S.exp) { S.exp.from = t.value; render(false); }
   if (t.id === 'expTo' && S.exp) { S.exp.to = t.value; render(false); }
 });
+
+document.addEventListener('input', e => { if (e.target.id === 'cSearch') { S.cq = e.target.value; render(false); } });

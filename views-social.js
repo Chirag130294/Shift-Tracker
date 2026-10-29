@@ -2,7 +2,7 @@
 // No server code: your app writes a safe copy of your working shifts, and Firestore rules decide who may read it.
 import {
   E, SH, S, VIEWS, ACT, SWIPE, ON_CHANGE, $, esc, MONTHS, DOWL, fmtMD, fmtD, fmtDY, fmtAgo, dowFrom, ico, bstyle, inkFor, badge,
-  toast, top, nav, demoNote, field, sw, wheel, render, go, tab, back, saveErr, ws, todayParts, setProfile
+  toast, top, nav, demoNote, field, sw, wheel, render, go, tab, back, saveErr, ws, todayParts, setProfile, empty, track, shiftTimes
 } from './core.js';
 
 S.shared = S.shared || {};   // owner uid -> their safe calendar copy (or { denied: true })
@@ -60,7 +60,7 @@ export function syncFollow() {
   const want = new Set(Object.keys(S.following || {}));
   for (const o of want) {
     if (FW[o]) continue;
-    const bump = () => { if (['follow', 'colleague', 'swapNew', 'swapView', 'swapCounter'].includes(S.view)) render(false); };
+    const bump = () => { if (['follow', 'colleague', 'swapNew', 'swapView', 'swapCounter', 'whoCan'].includes(S.view)) render(false); };
     FW[o] = [
       S.be.watchDoc(`shared/${o}`, d => { S.shared[o] = d; bump(); }, () => { S.shared[o] = { denied: true }; bump(); }),
       S.be.watchDoc(`users/${o}/viewers/${S.user.uid}`, d => { S.fperm[o] = d; bump(); }, () => { S.fperm[o] = null; bump(); })
@@ -229,7 +229,7 @@ VIEWS.follow = () => {
   const list = Object.entries(S.following || {});
   return `<div class="stack">${top('Calendars shared with me')}
     ${list.length ? `<div class="stack" style="gap:8px">${list.map(([o, f]) => { const p = permOf(o), sv = S.shared[o]; const sub = sv && sv.denied ? 'Access paused' : p && p.swap ? 'You can send swap requests' : 'View only'; return `<div class="card row">${person(f.name || 'Colleague', sub)}<button class="btn sec slim" data-act="cOpen" data-o="${esc(o)}">View</button><button class="iconbtn" data-act="unfollow" data-o="${esc(o)}" aria-label="Stop following ${esc(f.name || '')}">${ico('x', 18)}</button></div>`; }).join('')}</div>`
-      : '<div class="card"><p class="mute">Nothing yet. When a colleague sends you an invite link, open it and tap Accept.</p></div>'}
+      : `<div class="card">${empty('users', 'No shared calendars yet', 'When a colleague sends you an invite link, open it and tap Accept. Then you can see their shifts and find who can take yours.')}</div>`}
     <div class="note small">You only ever see the shifts a colleague works. Whether they are off, on vacation or sick is not shown.</div></div>${nav('settings')}`;
 };
 Object.assign(ACT, {
@@ -339,6 +339,46 @@ Object.assign(ACT, {
 });
 function readNote() { const el = $('#swapNote'); if (el && S.sn) S.sn.note = el.value; }
 document.addEventListener('change', e => { if (e.target.id === 'swapNote') readNote(); });
+
+// =====================================================================
+// WHO CAN TAKE MY SHIFT
+// =====================================================================
+// Looks at the calendars colleagues shared with me and says who is off that day, who would have a short rest, and who is busy.
+VIEWS.whoCan = () => {
+  const date = S.p.date, i = E.dayInfo(date, S.C), sh = S.C.shifts[i.work];
+  const head = top('Who can take my shift?');
+  if (!sh || i.type === 'SWAP_OUT') return `<div class="stack">${head}${empty('cal', 'You are not working that day', 'Pick one of your shifts on the calendar, then ask again.')}</div>`;
+  const ids = Object.keys(S.following || {});
+  const mine = `<div class="card row">${chip(sh, true)}<span class="grow"><b style="font-size:16px">${esc(sh.name)}</b><div class="small mute">${fmtDY(date)} · ${shiftTimes(sh, date)}</div></span></div>`;
+  if (!ids.length) return `<div class="stack">${head}${mine}<div class="card">${empty('users', 'No colleagues yet', 'When a colleague shares their calendar with you, this screen shows who is free to take your shift.', 'Calendars shared with me', 'followOpen')}</div></div>`;
+  const rank = { free: 0, tight: 1, working: 2, unknown: 3, none: 4 };
+  const people = ids.map(o => { const f = S.following[o] || {}, sv = S.shared[o]; return { o, name: f.name || (sv && sv.name) || 'Colleague', perm: permOf(o), sv, a: SH.availability(sv, date, sh) }; })
+    .sort((x, y) => rank[x.a.state] - rank[y.a.state] || x.name.localeCompare(y.name));
+  const free = people.filter(p => p.a.state === 'free').length;
+  const card = p => {
+    const { a, sv, perm } = p, canSwap = !!(perm && perm.active && perm.swap);
+    const tag = { free: ['ok', 'Off, good rest'], tight: ['tight', 'Off, short rest'], working: ['busy', 'Working'], unknown: ['busy', 'Not shared yet'], none: ['busy', 'Access paused'] }[a.state];
+    const line = a.state === 'free' ? `${esc(p.name.split(' ')[0])} is off on ${fmtD(date)} and has enough rest around your ${esc(sh.code)} shift.`
+      : a.state === 'tight' ? a.warns.map(esc).join(' ')
+        : a.state === 'working' ? `${esc(p.name.split(' ')[0])} works ${a.shift ? esc(a.shift.code) + ' ' + a.shift.start + ' to ' + a.shift.end : 'that day'}. You could trade shifts instead.`
+          : a.state === 'unknown' ? 'This date is outside the part of their calendar they share.' : 'They paused your access.';
+    let offer = '';
+    if (a.state === 'free' || a.state === 'tight' || a.state === 'working') {
+      const opts = a.state === 'working' ? [{ d: date, def: a.shift }].filter(x => x.def) : SH.theirShifts(sv, E.addDays(date, -3) > E.todayIso() ? E.addDays(date, -3) : E.todayIso(), E.addDays(date, 10), 4).filter(x => x.d !== date);
+      offer = !canSwap ? `<div class="small mute">View only. Ask ${esc(p.name.split(' ')[0])} to turn on swap requests for you.</div>`
+        : opts.length ? `<div class="small mute" style="font-weight:700">${a.state === 'working' ? 'Trade with' : 'Offer to take one of their shifts in exchange'}</div><div class="takechips">${opts.map(x => `<button class="takechip" data-act="whoAsk" data-o="${esc(p.o)}" data-t="${x.d}" aria-label="Ask ${esc(p.name)} to swap for ${esc(x.def.code)} on ${fmtD(x.d)}">${chip(x.def)}${fmtD(x.d)}</button>`).join('')}</div>`
+          : `<div class="small mute">They have no other shifts in the next 10 days to offer in exchange. Open their calendar to pick a date.</div><button class="btn sec slim" data-act="cOpen" data-o="${esc(p.o)}">Open ${esc(p.name.split(' ')[0])}'s calendar</button>`;
+    }
+    return `<div class="whocard"><div class="row">${person(p.name, '', `<span class="whotag ${tag[0]}">${tag[1]}</span>`)}</div><div class="small">${line}</div>${offer}</div>`;
+  };
+  return `<div class="stack">${head}${mine}
+    <div class="note ${free ? '' : 'warn'}">${free ? `<b>${free} colleague${free === 1 ? ' is' : 's are'} free</b> on ${fmtD(date)}.` : 'Nobody who shares with you is clearly free that day.'} Only the shifts people work are shared, so a colleague on vacation looks like they are off. Ask first.</div>
+    <div class="who">${people.map(card).join('')}</div></div>`;
+};
+Object.assign(ACT, {
+  whoOpen: d => go('whoCan', { date: d.d }),
+  whoAsk(d) { S.sn = { theirDate: d.t, myDate: S.p.date, note: '' }; go('swapNew', { o: d.o }); }
+});
 
 // One request: answer it, or follow it
 VIEWS.swapView = () => {
