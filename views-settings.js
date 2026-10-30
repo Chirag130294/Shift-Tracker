@@ -8,7 +8,7 @@ import { regionsOf, REGION_TITLE, regionLabel, ensureList, cachedList, BUILT_IN 
 import { initRot, rotEditor, commitRotation } from './views-rot.js';
 import { maybeShowJoin } from './views-social.js';
 
-export const VERSION = '1.5';
+export const VERSION = '1.6';
 const standalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 let deferredInstall = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; if (S.view === 'settings') render(false); });
@@ -35,19 +35,12 @@ VIEWS.settings = () => {
     <div class="mgroup">${mrow('sharingOpen', 'users', '#17695A', 'Share my calendar', nv.length ? `${nv.filter(v => v.active).length} of ${nv.length} colleague${nv.length === 1 ? '' : 's'} can see it` : 'Nobody yet')}${mrow('followOpen', 'eye', '#0E7490', 'Calendars shared with me', nf ? `${nf} colleague${nf === 1 ? '' : 's'}` : 'None yet')}</div>
     <div class="mgroup">${mrow('openRot', 'repeat', '#7A4FB5', 'Rotation', `${rot}${cur ? ' · starts ' + fmtMD(cur.anchor) : ''}`)}${mrow('shiftsOpen', 'lib', '#E0782B', 'Shift library', p.shifts.map(s => esc(s.code)).join(', '))}${mrow('tabLeave', 'leave', '#1E6FD9', 'Leave banks', S.banks.map(b => esc(b.name)).join(', '))}</div>
     <div class="mgroup">${mrow('holidaysOpen', 'flag', '#B3401F', 'Holidays and lieu', p.showHolidays === false ? 'Hidden on the calendar' : L.on ? 'Lieu day earned automatically' : 'Add your own, set up lieu')}${mrow('countryOpen', 'globe', '#0E7490', 'Country and region', esc(placeText(p)))}</div>
-    <div class="mgroup">${mrow('sPayOpen', 'dollar', '#17785A', 'Pay', PAYF.find(x => x[0] === p.payFreq)[1])}${mrow('sDisplayOpen', 'screen', '#475569', 'Calendar and display', `Week starts ${DOWL[p.weekStart]}`)}${mrow('exportOpen', 'download', '#1E6FD9', 'Export shifts (.ics)', 'Google or phone calendar')}</div>
+    <div class="mgroup">${mrow('sPayOpen', 'dollar', '#17785A', 'Pay', `${p.pay && p.pay.rate > 0 ? 'Gross pay on · ' : 'Rate, premiums, sick pay · '}${PAYF.find(x => x[0] === p.payFreq)[1]}`)}${mrow('sDisplayOpen', 'screen', '#475569', 'Calendar and display', `Week starts ${DOWL[p.weekStart]}`)}${mrow('exportOpen', 'download', '#1E6FD9', 'Export shifts (.ics)', 'Google or phone calendar')}</div>
     <div class="mgroup">${mrow('sDataOpen', 'shield', '#A8261B', 'Your data', 'Saved to your account and on this phone')}</div>
     <p class="small mute" style="text-align:center">Shift Calendar · version ${VERSION}</p></div>${nav('settings')}`;
 };
 const sub = (title, body) => `<div class="stack">${top(title)}${body}</div>${nav('settings')}`;
 VIEWS.sProfile = () => sub('Profile', `<div class="card">${field('Your name', `<input type="text" data-set="name" maxlength="60" value="${esc(S.profile.name)}" autocomplete="name">`)}<div class="small mute">Signed in as ${esc(S.user.email || 'this account')}</div></div><button class="btn danger" data-act="signOut">Log out</button>`);
-VIEWS.sPay = () => {
-  const p = S.profile, f = p.payFreq;
-  return sub('Pay', `<div class="card"><div class="field"><div class="lbl">PAY FREQUENCY</div>${rollSet('payFreq', PAYF, f, '', 'Pay frequency')}</div>
-    ${f === 'semimonthly' ? '' : field(f === 'monthly' ? 'A PAY DATE (ITS DAY REPEATS EACH MONTH)' : 'A PAY DATE YOU KNOW', `<input type="date" data-set="payAnchor" value="${esc(p.payAnchor)}">`)}
-    ${f === 'semimonthly' || f === 'monthly' ? `<div class="field"><div class="lbl">IF PAY DAY IS ON A WEEKEND</div>${rollSet('payWeekend', [['before', 'Friday before'], ['none', 'Keep the date']], p.payWeekend, '', 'Weekend pay day')}</div>` : ''}</div>
-    <p class="hint">Vacation, sick and other banks, including the switch for adding the whole year at once, are in Leave banks.</p>`);
-};
 VIEWS.sDisplay = () => {
   const p = S.profile;
   return sub('Calendar and display', `<div class="card"><div class="field"><div class="lbl">WEEK STARTS ON</div>${rollSet('weekStart', WEEKSTART, p.weekStart, 'num', 'Week starts on')}</div>
@@ -157,7 +150,7 @@ VIEWS.setup = () => {
     const f = p.payFreq;
     body = `<h1>How do you get paid?</h1><p class="mute">We use this to mark pay days and track your leave.</p>
       <div class="card"><div class="field"><div class="lbl">PAY FREQUENCY</div>${rollSet('payFreq', PAYF, f, '', 'Pay frequency')}</div>
-      ${f === 'semimonthly' ? '<p class="hint" style="margin-top:-6px">Pay days are the 15th and the last day of each month.</p>' : field(f === 'monthly' ? 'A pay date (its day repeats each month)' : 'A pay date you know', `<input type="date" data-set="payAnchor" value="${esc(p.payAnchor)}">`, 'Every pay day is counted from this date.')}</div>
+      ${f === 'semimonthly' ? '<p class="hint" style="margin-top:-6px">Pay days start as the 15th and the last day of each month. Change them later in Settings, Pay.</p>' : field(f === 'monthly' ? 'A pay date (its day repeats each month)' : 'A pay date you know', `<input type="date" data-set="payAnchor" value="${esc(p.payAnchor)}">`, 'Every pay day is counted from this date.')}</div>
       <div class="card"><h2 style="margin-bottom:10px">Leave balances</h2>
       <div class="two">${field(`Vacation left (${vac.unit === 'd' ? 'days' : 'hours'})`, num('vacHours', vac.balance))}${field(`Sick left (${sick.unit === 'd' ? 'days' : 'hours'})`, num('sickHours', sick.balance))}</div>
       <p class="hint" style="margin:-6px 0 14px">Find these on your latest pay stub. Other banks, such as banked overtime, are under Leave later.</p>

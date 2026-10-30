@@ -89,6 +89,16 @@ export function dayInfo(date, ctx) {
 }
 
 // ---------- pay days ----------
+// Pay settings that shape pay days live in profile.pay: semi = [day, day] for twice a month, mDay = pay day of a monthly pay.
+// 31 means "last day of the month". payWeekend: 'before' (Friday), 'after' (Monday) or 'none'.
+export function adjustWeekend(date, mode) {
+  if (mode === 'none') return date;
+  const w = weekday(date);
+  if (mode === 'after') return w === 6 ? addDays(date, 2) : w === 0 ? addDays(date, 1) : date;
+  return w === 6 ? addDays(date, -1) : w === 0 ? addDays(date, -2) : date;
+}
+export const monthlyPayDay = p => Number(p && p.pay && p.pay.mDay) || (p && p.payAnchor ? parts(p.payAnchor).d : 1);
+export const semiPayDays = p => { const s = p && p.pay && p.pay.semi; return Array.isArray(s) && s.length === 2 ? s.map(Number) : [15, 31]; };
 export function payDates(p, from, to) {
   const out = [];
   if (!p || !p.payFreq || from > to) return out;
@@ -101,27 +111,20 @@ export function payDates(p, from, to) {
     for (; n <= e; n += step) out.push(fromDayNum(n));
     return out;
   }
-  if (f === 'monthly' && !p.payAnchor) return out;
+  if (f === 'monthly' && !p.payAnchor && !(p.pay && p.pay.mDay)) return out;
   const a = parts(from), b = parts(to);
-  const anchorDay = p.payAnchor ? parts(p.payAnchor).d : 1;
+  const mDay = monthlyPayDay(p), semi = semiPayDays(p), mode = p.payWeekend || 'before';
   for (let k = a.y * 12 + (a.m - 1) - 1; k <= b.y * 12 + (b.m - 1) + 1; k++) {
     const y = Math.floor(k / 12), m = (k % 12) + 1, dim = daysInMonth(y, m);
-    const nominal = f === 'semimonthly' ? [15, dim] : [Math.min(anchorDay, dim)];
+    const nominal = f === 'semimonthly' ? semi.map(d => Math.min(d, dim)) : [Math.min(mDay, dim)];
     for (const d of nominal) {
-      let date = ymd(y, m, d);
-      if (p.payWeekend !== 'none') {
-        const w = weekday(date);
-        if (w === 6) date = addDays(date, -1);
-        else if (w === 0) date = addDays(date, -2);
-      }
+      const date = adjustWeekend(ymd(y, m, d), mode);
       if (date >= from && date <= to) out.push(date);
     }
   }
   return [...new Set(out)].sort();
 }
 
-// ---------- time off finder ----------
-// Runs of consecutive days when you are not working.
 export function offRuns(from, to, ctx) {
   const runs = [];
   let cur = null;

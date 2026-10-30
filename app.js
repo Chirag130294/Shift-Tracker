@@ -1,10 +1,11 @@
-// Shift Calendar v1.5: start-up, sign-in and live data. Screens live in the views-*.js files.
+// Shift Calendar v1.6: start-up, sign-in and live data. Screens live in the views-*.js files.
 import { createBackend } from './backend.js';
 import {
-  E, S, VIEWS, ACT, $, esc, ico, bstyle, field, render, go, tab, saveErr, toast, normalize, newProfile, todayParts
+  E, PAY, S, VIEWS, ACT, $, esc, ico, bstyle, field, render, go, tab, saveErr, toast, normalize, newProfile, todayParts
 } from './core.js';
 import './views-cal.js';
 import './views-leave.js';
+import './views-pay.js';
 import './views-rot.js';
 import './views-settings.js';
 import { publishSoon, syncFollow, applySwaps, resetSocial, joinFromUrl, maybeShowJoin } from './views-social.js';
@@ -106,6 +107,8 @@ function seedDemo() {
   };
   const pat = { id: 'p1', mode: 'week', anchor: '2026-10-11', effectiveFrom: '1900-01-01', days: PAT[as] || PAT.alice };
   const prof = { ...newProfile(), name: as ? as[0].toUpperCase() + as.slice(1) : 'Demo', patterns: [pat], payFreq: 'biweekly', payAnchor: '2026-10-29', vacYearly: 120, carryLimit: 20, deadline: '2026-12-31', onboarded: true };
+  const T = PAY.PAY_TEMPLATES.hospital;
+  prof.pay = PAY.normPay({ rate: 38.5, wk: T.wk, mode: T.mode, periods: T.periods.map((q, i) => ({ id: 'p' + i, name: q[0], start: q[1], end: q[2], prem: q[3] })), unpaid: T.unpaid.map(u => ({ len: u[0], u: u[1] })), leavePay: { sick: 70 } });
   prof.banks = prof.banks.map(b => (b.id === 'vac' ? { ...b, balance: 84, asOf: t, earn: { rule: 'pay', amount: 3.7 } } : b.id === 'sick' ? { ...b, balance: 36, asOf: t } : b.id === 'bank' ? { ...b, balance: 12, asOf: t } : { ...b, asOf: t }));
   S.be.saveProfile(S.user.uid, prof);
   const days = {};

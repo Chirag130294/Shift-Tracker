@@ -1,9 +1,10 @@
 // Calendar, day details, own swaps and upcoming.
 import {
-  E, B, S, VIEWS, ACT, SWIPE, $, esc, MONTHS, DOWL, fmtMD, fmtD, fmtDY, fmtH, shortT, timeRange, range, dowFrom, ico, moon, starFill,
+  PAY, E, B, S, VIEWS, ACT, SWIPE, $, esc, MONTHS, DOWL, fmtMD, fmtD, fmtDY, fmtH, shortT, timeRange, range, dowFrom, ico, moon, starFill,
   bstyle, badge, LV, isLvType, lvStyle, lvOf, leaveText, holiday, bankOf, bankStat, nextShift, shiftTimes, leaveGroups, timeOffIdeas,
   toast, top, nav, demoNote, field, sw, render, go, back, commitDay, commitDays, clean, TYPE_KEYS, todayParts, ws, MON, roll, empty, lieuInfo
 } from './core.js';
+import { payCard, payForPayDay } from './views-pay.js';
 
 const unread = () => Object.values(S.notes || {}).filter(n => !n.read).length;
 
@@ -66,6 +67,7 @@ function daySummary(date) {
   return `<div class="sumhead">${head}</div>
     ${hn ? `<div class="note hol small"><b>${esc(hn)}</b> · stat holiday${li ? ` · <b>${li.text} lieu earned</b>` : ''}</div>` : ''}
     ${leaveBox}
+    ${payCard(date)}
     ${mine ? `<button class="btn sec" data-act="whoOpen" data-d="${date}" style="margin-bottom:8px">${ico('users', 18)} Who can take my shift?</button>` : ''}
     <div class="actions">${acts.map(([k, l, ic]) => `<button class="act" data-act="selGo" data-k="${k}" data-d="${date}">${ico(ic)}${l}</button>`).join('')}</div>
     <div class="two">${isLvType(i.type) ? `<button class="btn sec dng" data-act="selClear" data-d="${date}">Remove ${esc(lv.l.toLowerCase())}</button>` : `<button class="btn sec" data-act="selGo" data-k="LIEU" data-d="${date}">Lieu day</button>`}<button class="btn sec" data-act="openDay" data-d="${date}">Full details</button></div>`;
@@ -183,6 +185,7 @@ VIEWS.day = () => {
     ${hn ? `<div class="note hol"><b>${esc(hn)}</b> · stat holiday<br>${wsh ? 'You are scheduled to work. Premium pay or a lieu day may apply.' : 'You are not working this day.'}</div>` : ''}
     ${psh && E.crossesMidnight(psh) ? `<div class="note small">${moon(12)} Your ${esc(psh.code)} shift from ${fmtD(E.addDays(date, -1))} ends this morning at ${psh.end}.</div>` : ''}
     ${card}
+    ${payCard(date)}
     ${wsh && i.type !== 'SWAP_OUT' && date >= E.todayIso() ? `<button class="btn sec" data-act="whoOpen" data-d="${date}">${ico('users', 18)} Who can take my shift?</button>` : ''}
     <div class="actions">${A.map(([k, l, ic]) => `<button class="act" data-act="dayAct" data-k="${k}">${ico(ic)}${l}</button>`).join('')}</div>
     ${panel}
@@ -303,7 +306,7 @@ VIEWS.up = () => {
   for (let n = 0; n < 60; n++) {
     const d = E.addDays(today, n), hn = holiday(d), i = E.dayInfo(d, C);
     if (hn) ev.push({ d, t: hn, s: i.isWorking ? `You work: ${esc(C.shifts[i.work]?.code || '')}${C.shifts[i.work] ? ' · premium pay may apply' : ''}` : 'Day off', tag: 'HOL', bg: '#FFE3D3' });
-    if (pays.includes(d)) ev.push({ d, t: 'Pay day', s: { weekly: 'Every week', biweekly: 'Every 2 weeks', semimonthly: 'Twice a month', monthly: 'Monthly' }[p.payFreq] || '', tag: 'PAY', bg: '#DCEEE9' });
+    if (pays.includes(d)) ev.push({ d, t: 'Pay day', s: ({ weekly: 'Every week', biweekly: 'Every 2 weeks', semimonthly: 'Twice a month', monthly: 'Monthly' }[p.payFreq] || '') + (payForPayDay(d) !== null ? ' · ' + PAY.money(p, payForPayDay(d)) + ' gross' : ''), tag: 'PAY', bg: '#DCEEE9' });
   }
   for (const g of leaveGroups()) if (g.end >= today && g.start <= E.addDays(today, 60)) ev.push({ d: g.start < today ? today : g.start, t: `${g.lv.name}, ${g.n} shift${g.n === 1 ? '' : 's'}`, s: `${range(g.start, g.end)} · ${fmtH(g.hours)}`, tag: g.lv.l, bg: g.lv.bg });
   ev.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));

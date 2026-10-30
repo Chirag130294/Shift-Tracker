@@ -3,8 +3,9 @@
 import * as E from './engine.js';
 import * as B from './banks.js';
 import * as SH from './share.js';
+import * as PAY from './pay.js';
 import { REGIONS, BUILT_IN, holidaysFor, holidaysAny, ensureList, setOnLoaded } from './holidays.js';
-export { E, B, SH, REGIONS };
+export { E, B, SH, PAY, REGIONS };
 
 export const $ = s => document.querySelector(s);
 export const $$ = s => Array.from(document.querySelectorAll(s));
@@ -100,6 +101,7 @@ export const VIEWCLS = { cal: 'calview', setup: '', login: '' };
 export const TABOF = {
   cal: 'cal', day: 'cal', swap: 'cal', whoCan: 'cal', notices: 'cal', swapView: 'cal', swapCounter: 'cal',
   leave: 'leave', book: 'leave', bankDetail: 'leave', bankEdit: 'leave',
+  pay: 'pay',
   up: 'up'
 };
 const NO_TABS = ['boot', 'login', 'config', 'fatal', 'setup'];
@@ -111,7 +113,7 @@ export const defaultRegion = cc => (cc === 'CA' ? 'ON' : cc === 'US' ? 'US' : ''
 export const newProfile = () => ({
   name: '', country: 'CA', region: 'ON', showHolidays: true, customHolidays: [], holidayLieu: { on: false, earn: 'day', bank: 'lieu' },
   shifts: E.DEFAULT_SHIFTS(), patterns: [], weekStart: 0, layout: 'auto',
-  payFreq: 'biweekly', payAnchor: '', payWeekend: 'before',
+  payFreq: 'biweekly', payAnchor: '', payWeekend: 'before', pay: PAY.defaultPay(),
   banks: B.DEFAULT_BANKS().map(b => ({ ...b, asOf: E.todayIso() })),
   vacYearly: 0, carryLimit: '', deadline: '', reminderMin: 120, onboarded: false
 });
@@ -122,6 +124,7 @@ export const normalize = p => {
   const w = Number(n.weekStart);
   n.weekStart = Number.isInteger(w) && w >= 0 && w <= 6 ? w : 0;
   n.holidayLieu = { on: false, earn: 'day', bank: 'lieu', ...(p.holidayLieu || {}) };
+  n.pay = PAY.normPay(p.pay);
   return n;
 };
 export const buildCtx = () => ({ shifts: Object.fromEntries((S.profile.shifts || []).map(s => [s.id, s])), patterns: S.profile.patterns || [], days: S.days });
@@ -289,8 +292,10 @@ window.addEventListener('online', showSync);
 window.addEventListener('offline', showSync);
 
 export const top = (title, back = true, right = '') => `<div class="top">${back ? `<button class="iconbtn" data-act="back" aria-label="Back">${ico('back')}</button>` : ''}<h1 class="grow">${esc(title)}</h1>${right}</div>`;
-const NAV = [['cal', 'Calendar', 'cal'], ['leave', 'Leave', 'leave'], ['up', 'Upcoming', 'list'], ['settings', 'Settings', 'gear']];
-export const nav = a => `<nav class="tabs" aria-label="Main">${NAV.map(([v, l, i]) => `<button data-act="tab" data-v="${v}" class="${a === v ? 'on' : ''}" ${a === v ? 'aria-current="page"' : ''}>${ico(i, 22)}${l}</button>`).join('')}</nav>`;
+const NAV = [['cal', 'Calendar', 'cal'], ['leave', 'Leave', 'leave'], ['pay', 'Pay', 'pay'], ['up', 'Upcoming', 'list'], ['settings', 'Settings', 'gear']];
+// The Pay tab shows the currency sign the person chose
+const navIcon = i => (i === 'pay' ? `<span class="cursign" aria-hidden="true">${esc(PAY.currencySymbol(S.profile))}</span>` : ico(i, 22));
+export const nav = a => `<nav class="tabs" aria-label="Main">${NAV.map(([v, l, i]) => `<button data-act="tab" data-v="${v}" class="${a === v ? 'on' : ''}" ${a === v ? 'aria-current="page"' : ''}>${navIcon(i)}${l}</button>`).join('')}</nav>`;
 export const demoNote = () => (S.be && S.be.kind === 'demo' ? `<div class="note warn small">Preview${S.be.as ? ' as ' + esc(S.be.as) : ''} with sample data. Nothing is saved to the internet.</div>` : '');
 // The label wraps its input, so screen readers and taps on the label work without ids.
 export const field = (label, input, hint = '') => `<div class="field"><label><span class="lbl">${label}</span>${input}</label>${hint ? `<div class="hint">${hint}</div>` : ''}</div>`;
